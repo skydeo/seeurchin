@@ -100,6 +100,7 @@ func (s *Server) buildPollView(ctx context.Context, p *poll.Poll, me *poll.Parti
 		ParticipantCount:  len(participants),
 		VoterCount:        voterCount,
 		ShareURL:          s.cfg.BaseURL + "/p/" + p.Code,
+		Nominations:       []nominationView{}, // serialize empty as [] not null
 	}
 
 	for _, n := range noms {
@@ -183,7 +184,14 @@ func (s *Server) computeResults(ctx context.Context, p *poll.Poll, noms []poll.N
 	for _, n := range noms {
 		title[n.ID] = n.Snapshot.Title
 	}
-	rv := &resultsView{Method: res.Method, Rounds: res.Rounds}
+	// Initialize slices so an empty tally serializes as [] not null — the
+	// frontend dereferences r.ranked / r.winners without a per-field guard.
+	rv := &resultsView{
+		Method:  res.Method,
+		Rounds:  res.Rounds,
+		Winners: []resultEntry{},
+		Ranked:  []resultEntry{},
+	}
 	for _, r := range res.Ranked {
 		rv.Ranked = append(rv.Ranked, resultEntry{NominationID: r.NominationID, Title: title[r.NominationID], Score: r.Score})
 	}

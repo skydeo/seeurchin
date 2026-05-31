@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -205,5 +206,23 @@ func TestVoteRequiresJoin(t *testing.T) {
 
 	if c := do(t, stranger, http.MethodPost, ts.URL+"/api/polls/"+created.Code+"/nominations", map[string]string{"item_id": "m1"}, nil); c != http.StatusUnauthorized {
 		t.Fatalf("stranger nominate status = %d, want 401", c)
+	}
+}
+
+// TestEmptyCollectionsSerializeAsArrays guards against nil slices marshaling to
+// JSON null, which crashes the frontend (it calls .map on the field directly).
+func TestEmptyCollectionsSerializeAsArrays(t *testing.T) {
+	ts := newTestServer(t)
+	host := newClient(t)
+
+	body := bytes.NewBufferString(`{"title":"P","host_name":"Alice","library_scope":"both","voting_method":"approval"}`)
+	resp, err := host.Post(ts.URL+"/api/polls", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if !bytes.Contains(raw, []byte(`"nominations":[]`)) {
+		t.Fatalf("nominations should serialize as [] not null; got: %s", raw)
 	}
 }
