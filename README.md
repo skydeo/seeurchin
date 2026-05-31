@@ -26,14 +26,17 @@ Everything updates in real time via Server-Sent Events — no refreshing.
 ## Features
 
 - **Two-round flow** — nominate, then vote, with host-defined controls.
-- **Three voting methods**, chosen per poll (see below), built on a pluggable
-  engine so new methods are a single registration.
+- **Four voting methods**, chosen per poll (see below), built on a pluggable
+  engine so new methods are a single registration — including a no-vote
+  **random pick**.
 - **Guest-friendly** — participants just enter a display name; no Jellyfin
   account needed. (Built behind an auth seam so Jellyfin login can be added.)
-- **Browse your real library** — poster-grid search, scoped to movies/shows.
-  Posters are proxied through the backend, so the browser never sees your
-  Jellyfin URL or API key. Duplicate library entries for the same title are
-  collapsed automatically.
+- **Browse your real library** — poster-grid search, scoped to movies/shows,
+  optionally restricted to chosen **genres**. Posters are proxied through the
+  backend, so the browser never sees your Jellyfin URL or API key. Duplicate
+  library entries for the same title are collapsed automatically.
+- **Flexible self-voting** — allow, forbid, or cap how much voters may back
+  their own picks; optionally reveal who nominated the winner.
 - **Short share codes** — ambiguity-free 6-character codes (Crockford base32,
   no `O/0/I/1/L` confusion), embedded in a tappable link.
 - **Mobile-first** — designed for passing a phone around / dropping a link in a
@@ -274,5 +277,10 @@ web/                 SvelteKit + Tailwind frontend
 
 ## Status
 
-**v1.0.0** — the two-round flow, all three voting methods, guest identity, live
+**v1.1.0** — adds a **random pick** voting method, **genre-restricted**
+nominations, an option to **reveal who nominated** on the results screen,
+**capped self-voting** (`max_self_votes`), and a clearer round-1 nomination
+screen, on top of v1.0.
+
+**v1.0.0** — the two-round flow, the core voting methods, guest identity, live
 updates, library browsing, and Docker packaging are complete and in use.
