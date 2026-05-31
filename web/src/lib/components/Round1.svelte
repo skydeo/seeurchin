@@ -80,12 +80,12 @@
 <section>
 	<div class="flex items-end justify-between gap-3">
 		<div>
-			<h2 class="text-lg font-semibold">Your nominations</h2>
-			<p class="text-sm text-slate-400">{guidance} · you've picked {poll.me?.nomination_count ?? 0}</p>
+			<h2 class="text-lg font-semibold">Nominations</h2>
+			<p class="text-sm text-slate-400">{guidance} · you've added {poll.me?.nomination_count ?? 0}</p>
 		</div>
 		<button
 			onclick={openBrowse}
-			class="rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600"
+			class="shrink-0 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600"
 		>
 			＋ Add titles
 		</button>
@@ -94,12 +94,26 @@
 	{#if actionError}<p class="mt-2 text-sm text-rose-400">{actionError}</p>{/if}
 
 	{#if poll.nominations.length === 0}
-		<div class="mt-6 rounded-2xl border border-dashed border-white/10 p-10 text-center text-slate-400">
+		<button
+			onclick={openBrowse}
+			class="mt-6 block w-full rounded-2xl border border-dashed border-white/10 p-10 text-center text-slate-400 hover:border-brand-500/50 hover:text-slate-200"
+		>
 			Nothing nominated yet. Tap <span class="font-semibold text-slate-200">Add titles</span> to browse the library.
-		</div>
+		</button>
 	{:else}
+		{#if (poll.me?.nomination_count ?? 0) === 0}
+			<button
+				onclick={openBrowse}
+				class="mt-4 flex w-full items-center justify-between gap-3 rounded-2xl bg-brand-500/10 p-4 text-left ring-1 ring-brand-500/30 hover:bg-brand-500/15"
+			>
+				<span class="text-sm text-slate-200">
+					You haven't added anything yet — tap to pick titles from the library.
+				</span>
+				<span class="shrink-0 rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white">＋ Add titles</span>
+			</button>
+		{/if}
 		<h3 class="mt-6 text-xs font-semibold uppercase tracking-wide text-slate-500">
-			Nominated so far ({poll.nominations.length})
+			Everyone's picks so far ({poll.nominations.length}){#if mine.length > 0} · {mine.length} yours{/if}
 		</h3>
 		<div class="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
 			{#each poll.nominations as n (n.id)}
