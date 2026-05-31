@@ -136,8 +136,11 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	case "series":
 		types = []string{"Series"}
 	}
-	limit := 60
-	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 120 {
+	// Load the whole library by default — Jellyfin returns all matching items
+	// when no Limit is sent, and the frontend lazy-loads posters as you scroll.
+	// An explicit ?limit= still caps it if ever needed.
+	limit := 0
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
 		limit = v
 	}
 	start, _ := strconv.Atoi(r.URL.Query().Get("start"))
@@ -160,9 +163,14 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Collapse duplicate library entries for the same title — e.g. the same
+	// media surfaced under two Jellyfin libraries shows up as distinct items
+	// with different IDs. Key on type+title+year; prefer the copy that has a
+	// poster, and keep the nominated flag sticky across the merge.
 	out := make([]libraryItem, 0, len(items))
+	seen := make(map[string]int, len(items))
 	for _, it := range items {
-		out = append(out, libraryItem{
+		li := libraryItem{
 			ID:        it.ID,
 			Title:     it.Name,
 			Year:      it.ProductionYear,
@@ -170,7 +178,21 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 			Runtime:   it.RuntimeMinutes(),
 			ImageTag:  it.PrimaryImageTag(),
 			Nominated: nominated[it.ID],
-		})
+		}
+		key := it.Type + "\x00" + strings.ToLower(strings.TrimSpace(it.Name)) + "\x00" + strconv.Itoa(it.ProductionYear)
+		if idx, ok := seen[key]; ok {
+			if li.Nominated {
+				out[idx].Nominated = true
+			}
+			if out[idx].ImageTag == "" && li.ImageTag != "" {
+				wasNominated := out[idx].Nominated
+				out[idx] = li
+				out[idx].Nominated = wasNominated
+			}
+			continue
+		}
+		seen[key] = len(out)
+		out = append(out, li)
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{"items": out, "total": total})
 }
