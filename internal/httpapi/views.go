@@ -24,6 +24,9 @@ type pollView struct {
 	RevealNominators  bool                 `json:"reveal_nominators"`
 	RevealScope       string               `json:"reveal_scope"`
 	Genres            []string             `json:"genres"`
+	AllowWriteins     bool                 `json:"allow_writeins"`
+	AutoRequestWinner bool                 `json:"auto_request_winner"`
+	SeerrEnabled      bool                 `json:"seerr_enabled"`
 	ParticipantCount  int                  `json:"participant_count"`
 	VoterCount        int                  `json:"voter_count"`
 	Nominations       []nominationView     `json:"nominations"`
@@ -41,6 +44,9 @@ type nominationView struct {
 	Runtime        int    `json:"runtime_minutes"`
 	Overview       string `json:"overview"`
 	ImageTag       string `json:"image_tag"`
+	Source         string `json:"source,omitempty"`     // "seerr" for write-ins
+	PosterURL      string `json:"poster_url,omitempty"` // external poster (write-ins)
+	MediaType      string `json:"media_type,omitempty"`
 	NominatorCount int    `json:"nominator_count"`
 	MineNominated  bool   `json:"mine_nominated"`
 }
@@ -62,10 +68,11 @@ type resultsView struct {
 }
 
 type resultEntry struct {
-	NominationID string   `json:"nomination_id"`
-	Title        string   `json:"title"`
-	Score        float64  `json:"score"`
-	Nominators   []string `json:"nominators,omitempty"` // display names, when the poll reveals them
+	NominationID  string   `json:"nomination_id"`
+	Title         string   `json:"title"`
+	Score         float64  `json:"score"`
+	Nominators    []string `json:"nominators,omitempty"`     // display names, when the poll reveals them
+	RequestStatus string   `json:"request_status,omitempty"` // Seerr status for a winning write-in
 }
 
 // buildPollView assembles the full state for poll p as seen by participant me
@@ -104,6 +111,9 @@ func (s *Server) buildPollView(ctx context.Context, p *poll.Poll, me *poll.Parti
 		RevealNominators:  p.RevealNominators,
 		RevealScope:       p.RevealScope,
 		Genres:            genresOrEmpty(p.Genres),
+		AllowWriteins:     p.AllowWriteins,
+		AutoRequestWinner: p.AutoRequestWinner,
+		SeerrEnabled:      s.seerrEnabled(),
 		ParticipantCount:  len(participants),
 		VoterCount:        voterCount,
 		ShareURL:          s.cfg.BaseURL + "/p/" + p.Code,
@@ -129,6 +139,9 @@ func (s *Server) buildPollView(ctx context.Context, p *poll.Poll, me *poll.Parti
 			Runtime:        n.Snapshot.Runtime,
 			Overview:       n.Snapshot.Overview,
 			ImageTag:       n.Snapshot.ImageTag,
+			Source:         n.Snapshot.Source,
+			PosterURL:      n.Snapshot.PosterURL,
+			MediaType:      n.Snapshot.MediaType,
 			NominatorCount: len(n.Nominators),
 			MineNominated:  mine,
 		})
@@ -196,8 +209,10 @@ func (s *Server) computeResults(ctx context.Context, p *poll.Poll, noms []poll.N
 		return nil, err
 	}
 	title := make(map[string]string, len(noms))
+	snapByID := make(map[string]poll.ItemSnapshot, len(noms))
 	for _, n := range noms {
 		title[n.ID] = n.Snapshot.Title
+		snapByID[n.ID] = n.Snapshot
 	}
 
 	// Optionally reveal who nominated each title, but only once the poll is
@@ -234,6 +249,12 @@ func (s *Server) computeResults(ctx context.Context, p *poll.Poll, noms []poll.N
 		e := resultEntry{NominationID: id, Title: title[id]}
 		if nominators != nil {
 			e.Nominators = nominators[id]
+		}
+		// Surface the Seerr request status for a winning write-in.
+		if snap := snapByID[id]; snap.Source == poll.SourceSeerr {
+			if req, err := s.repo.GetSeerrRequest(ctx, p.ID, id); err == nil && req != nil {
+				e.RequestStatus = req.Status
+			}
 		}
 		rv.Winners = append(rv.Winners, e)
 	}

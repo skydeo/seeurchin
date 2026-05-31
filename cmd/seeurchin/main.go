@@ -17,6 +17,7 @@ import (
 	"github.com/enderu/seeurchin/internal/httpapi"
 	"github.com/enderu/seeurchin/internal/jellyfin"
 	"github.com/enderu/seeurchin/internal/poll"
+	"github.com/enderu/seeurchin/internal/seerr"
 	"github.com/enderu/seeurchin/internal/store"
 )
 
@@ -63,10 +64,16 @@ func main() {
 	}
 	cancel()
 
+	var sr *seerr.Client
+	if cfg.Seerr.Enabled() {
+		sr = seerr.New(cfg.Seerr.URL, cfg.Seerr.APIKey)
+		log.Printf("Seerr enabled at %s — write-ins and winner auto-request available", cfg.Seerr.URL)
+	}
+
 	svc := poll.NewService(st, itemResolver{jf}, 0)
 	sessions := auth.NewSessions(cfg.SessionSecret)
 	hub := httpapi.NewHub()
-	srv := httpapi.NewServer(cfg, svc, st, jf, sessions, hub)
+	srv := httpapi.NewServer(cfg, svc, st, jf, sr, sessions, hub)
 
 	httpServer := &http.Server{
 		Addr:              cfg.Addr,

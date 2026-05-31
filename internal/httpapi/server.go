@@ -18,6 +18,7 @@ import (
 	"github.com/enderu/seeurchin/internal/config"
 	"github.com/enderu/seeurchin/internal/jellyfin"
 	"github.com/enderu/seeurchin/internal/poll"
+	"github.com/enderu/seeurchin/internal/seerr"
 )
 
 const cookieName = "seeurchin_session"
@@ -28,14 +29,20 @@ type Server struct {
 	svc      *poll.Service
 	repo     poll.Repository
 	jf       *jellyfin.Client
+	seerr    *seerr.Client // nil when Seerr is not configured
 	sessions *auth.Sessions
 	hub      *Hub
 }
 
-// NewServer constructs a Server.
-func NewServer(cfg config.Config, svc *poll.Service, repo poll.Repository, jf *jellyfin.Client, sessions *auth.Sessions, hub *Hub) *Server {
-	return &Server{cfg: cfg, svc: svc, repo: repo, jf: jf, sessions: sessions, hub: hub}
+// NewServer constructs a Server. sr may be nil, which disables write-in /
+// Seerr-request features.
+func NewServer(cfg config.Config, svc *poll.Service, repo poll.Repository, jf *jellyfin.Client, sr *seerr.Client, sessions *auth.Sessions, hub *Hub) *Server {
+	return &Server{cfg: cfg, svc: svc, repo: repo, jf: jf, seerr: sr, sessions: sessions, hub: hub}
 }
+
+// seerrEnabled reports whether Seerr-backed features (write-ins, auto-request)
+// are available.
+func (s *Server) seerrEnabled() bool { return s.seerr != nil }
 
 // Routes returns the configured HTTP handler.
 func (s *Server) Routes() http.Handler {
@@ -45,6 +52,7 @@ func (s *Server) Routes() http.Handler {
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", s.handleHealth)
+		r.Get("/features", s.handleFeatures)
 		r.Get("/methods", s.handleMethods)
 		r.Get("/genres", s.handleGenres)
 		r.Post("/polls", s.handleCreatePoll)
@@ -52,10 +60,12 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/", s.handleGetPoll)
 			r.Post("/join", s.handleJoin)
 			r.Get("/library", s.handleLibrary)
+			r.Get("/search-external", s.handleSearchExternal)
 			r.Post("/nominations", s.handleNominate)
 			r.Delete("/nominations/{id}", s.handleWithdraw)
 			r.Post("/advance", s.handleAdvance)
 			r.Post("/votes", s.handleVote)
+			r.Post("/request/{id}", s.handleRequestWinner)
 			r.Get("/results", s.handleResults)
 			r.Get("/events", s.handleEvents)
 		})

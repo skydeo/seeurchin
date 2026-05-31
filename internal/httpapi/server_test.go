@@ -9,12 +9,14 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/enderu/seeurchin/internal/auth"
 	"github.com/enderu/seeurchin/internal/config"
 	"github.com/enderu/seeurchin/internal/jellyfin"
 	"github.com/enderu/seeurchin/internal/poll"
+	"github.com/enderu/seeurchin/internal/seerr"
 	"github.com/enderu/seeurchin/internal/store"
 )
 
@@ -25,6 +27,12 @@ func (f fakeResolver) GetItem(_ context.Context, id string) (*poll.ResolvedItem,
 }
 
 func newTestServer(t *testing.T) *httptest.Server {
+	return newTestServerWithSeerr(t, config.SeerrConfig{}, nil)
+}
+
+// newTestServerWithSeerr builds a test server with an optional Seerr client (nil
+// disables write-in / auto-request features).
+func newTestServerWithSeerr(t *testing.T, seerrCfg config.SeerrConfig, sr *seerr.Client) *httptest.Server {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
 	if err != nil {
@@ -37,9 +45,9 @@ func newTestServer(t *testing.T) *httptest.Server {
 		"m2": {ID: "m2", Title: "Arrival", Type: "Movie", Year: 2016, Genres: []string{"Sci-Fi", "Drama"}},
 		"m3": {ID: "m3", Title: "Sicario", Type: "Movie", Year: 2015, Genres: []string{"Thriller", "Crime"}},
 	}}
-	cfg := config.Config{BaseURL: "http://example.test", SessionSecret: []byte("test-secret-test-secret")}
+	cfg := config.Config{BaseURL: "http://example.test", SessionSecret: []byte("test-secret-test-secret"), Seerr: seerrCfg}
 	svc := poll.NewService(st, resolver, 0)
-	srv := NewServer(cfg, svc, st, jellyfin.New("http://unused", "k"), auth.NewSessions(cfg.SessionSecret), NewHub())
+	srv := NewServer(cfg, svc, st, jellyfin.New("http://unused", "k"), sr, auth.NewSessions(cfg.SessionSecret), NewHub())
 
 	ts := httptest.NewServer(srv.Routes())
 	t.Cleanup(ts.Close)
@@ -288,6 +296,84 @@ func TestGenreRestrictedNominations(t *testing.T) {
 	// Sicario (Thriller/Crime) is allowed.
 	if c := do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/nominations", map[string]string{"item_id": "m3"}, nil); c != http.StatusOK {
 		t.Fatalf("on-genre nominate status = %d, want 200", c)
+	}
+}
+
+func TestWriteInAndAutoRequest(t *testing.T) {
+	var requestCount int
+	seerrMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/search":
+			_, _ = io.WriteString(w, `{"results":[{"id":550,"mediaType":"movie","title":"Fight Club","releaseDate":"1999-10-15","posterPath":"/f.jpg"}]}`)
+		case strings.HasPrefix(r.URL.Path, "/api/v1/movie/"):
+			_, _ = io.WriteString(w, `{"id":550,"title":"Fight Club","releaseDate":"1999-10-15","posterPath":"/f.jpg"}`)
+		case r.URL.Path == "/api/v1/request" && r.Method == http.MethodPost:
+			requestCount++
+			_, _ = io.WriteString(w, `{"status":1}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer seerrMock.Close()
+
+	sr := seerr.New(seerrMock.URL, "k")
+	ts := newTestServerWithSeerr(t, config.SeerrConfig{URL: seerrMock.URL, APIKey: "k", MovieProfileID: -1, TVProfileID: -1, ServerID: -1}, sr)
+	host := newClient(t)
+
+	var created pollView
+	do(t, host, http.MethodPost, ts.URL+"/api/polls", map[string]any{
+		"title": "Write-in night", "host_name": "Alice", "library_scope": "movie",
+		"voting_method": "approval", "allow_guests": true,
+		"allow_writeins": true, "auto_request_winner": true,
+	}, &created)
+	code := created.Code
+	if !created.SeerrEnabled || !created.AllowWriteins {
+		t.Fatalf("expected seerr_enabled + allow_writeins, got %+v", created)
+	}
+
+	// One library nomination so the poll can advance.
+	do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/nominations", map[string]string{"item_id": "m1"}, nil)
+
+	// External search returns the TMDB hit; nominate it as a write-in.
+	var sx struct {
+		Results []struct {
+			TMDBID    int    `json:"tmdb_id"`
+			MediaType string `json:"media_type"`
+			Title     string `json:"title"`
+		} `json:"results"`
+	}
+	do(t, host, http.MethodGet, ts.URL+"/api/polls/"+code+"/search-external?q=fight", nil, &sx)
+	if len(sx.Results) != 1 || sx.Results[0].TMDBID != 550 || sx.Results[0].Title != "Fight Club" {
+		t.Fatalf("external search = %+v", sx.Results)
+	}
+	do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/nominations", map[string]any{"tmdb_id": 550, "media_type": "movie"}, nil)
+
+	var r2 pollView
+	do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/advance", nil, &r2)
+	writeInID := nomIDByItem(r2, "seerr:movie:550")
+	if writeInID == "" {
+		t.Fatalf("write-in nomination missing: %+v", r2.Nominations)
+	}
+
+	// Vote the write-in to victory, then close — the winner auto-requests once.
+	do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/votes", map[string]any{"selections": map[string]int{writeInID: 1}}, nil)
+	var closed pollView
+	do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/advance", nil, &closed)
+	if closed.Status != "closed" {
+		t.Fatalf("status = %q, want closed", closed.Status)
+	}
+	if requestCount != 1 {
+		t.Fatalf("expected exactly 1 Seerr request on close, got %d", requestCount)
+	}
+	if closed.Results == nil || len(closed.Results.Winners) != 1 ||
+		closed.Results.Winners[0].NominationID != writeInID || closed.Results.Winners[0].RequestStatus != "pending" {
+		t.Fatalf("winner/request status wrong: %+v", closed.Results)
+	}
+
+	// Manual re-request is idempotent (already recorded).
+	do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/request/"+writeInID, nil, nil)
+	if requestCount != 1 {
+		t.Fatalf("manual request should not double-fire, got %d", requestCount)
 	}
 }
 

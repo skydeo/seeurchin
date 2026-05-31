@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,11 +13,18 @@ import (
 
 	"github.com/enderu/seeurchin/internal/jellyfin"
 	"github.com/enderu/seeurchin/internal/poll"
+	"github.com/enderu/seeurchin/internal/seerr"
 	"github.com/enderu/seeurchin/internal/voting"
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	s.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleFeatures advertises optional capabilities so the create page can show
+// the right controls before a poll exists.
+func (s *Server) handleFeatures(w http.ResponseWriter, _ *http.Request) {
+	s.writeJSON(w, http.StatusOK, map[string]any{"seerr": s.seerrEnabled()})
 }
 
 type methodView struct {
@@ -33,17 +42,19 @@ func (s *Server) handleMethods(w http.ResponseWriter, _ *http.Request) {
 }
 
 type createPollReq struct {
-	Title            string               `json:"title"`
-	HostName         string               `json:"host_name"`
-	LibraryScope     string               `json:"library_scope"`
-	SubmissionRules  poll.SubmissionRules `json:"submission_rules"`
-	VotingMethod     string               `json:"voting_method"`
-	VotingConfig     json.RawMessage      `json:"voting_config"`
-	AllowGuests      bool                 `json:"allow_guests"`
-	ResultsLive      bool                 `json:"results_live"`
-	RevealNominators bool                 `json:"reveal_nominators"`
-	RevealScope      string               `json:"reveal_scope"`
-	Genres           []string             `json:"genres"`
+	Title             string               `json:"title"`
+	HostName          string               `json:"host_name"`
+	LibraryScope      string               `json:"library_scope"`
+	SubmissionRules   poll.SubmissionRules `json:"submission_rules"`
+	VotingMethod      string               `json:"voting_method"`
+	VotingConfig      json.RawMessage      `json:"voting_config"`
+	AllowGuests       bool                 `json:"allow_guests"`
+	ResultsLive       bool                 `json:"results_live"`
+	RevealNominators  bool                 `json:"reveal_nominators"`
+	RevealScope       string               `json:"reveal_scope"`
+	Genres            []string             `json:"genres"`
+	AllowWriteins     bool                 `json:"allow_writeins"`
+	AutoRequestWinner bool                 `json:"auto_request_winner"`
 }
 
 // handleGenres lists the library's genres for a scope ("movie" | "series" |
@@ -69,17 +80,19 @@ func (s *Server) handleCreatePoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, host, err := s.svc.CreatePoll(r.Context(), poll.CreatePollInput{
-		Title:            req.Title,
-		HostName:         req.HostName,
-		LibraryScope:     poll.LibraryScope(req.LibraryScope),
-		SubmissionRules:  req.SubmissionRules,
-		VotingMethod:     req.VotingMethod,
-		VotingConfig:     req.VotingConfig,
-		AllowGuests:      req.AllowGuests,
-		ResultsLive:      req.ResultsLive,
-		RevealNominators: req.RevealNominators,
-		RevealScope:      req.RevealScope,
-		Genres:           req.Genres,
+		Title:             req.Title,
+		HostName:          req.HostName,
+		LibraryScope:      poll.LibraryScope(req.LibraryScope),
+		SubmissionRules:   req.SubmissionRules,
+		VotingMethod:      req.VotingMethod,
+		VotingConfig:      req.VotingConfig,
+		AllowGuests:       req.AllowGuests,
+		ResultsLive:       req.ResultsLive,
+		RevealNominators:  req.RevealNominators,
+		RevealScope:       req.RevealScope,
+		Genres:            req.Genres,
+		AllowWriteins:     req.AllowWriteins,
+		AutoRequestWinner: req.AutoRequestWinner,
 	})
 	if err != nil {
 		s.writeErr(w, err)
@@ -220,8 +233,52 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, map[string]any{"items": out, "total": total})
 }
 
+// handleSearchExternal backs the "request something new" tab: a live,
+// debounced search of Seerr (TMDB) for titles that may not be in the library.
+func (s *Server) handleSearchExternal(w http.ResponseWriter, r *http.Request) {
+	p, err := s.pollFromCode(r)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	if _, ok := s.requireParticipant(w, r, p); !ok {
+		return
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if !s.seerrEnabled() || !p.AllowWriteins || q == "" {
+		s.writeJSON(w, http.StatusOK, map[string]any{"results": []any{}})
+		return
+	}
+	results, err := s.seerr.Search(r.Context(), q)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	out := results[:0] // reuse backing array; keep only scope-appropriate hits
+	for _, res := range results {
+		if scopeAllowsMedia(p.LibraryScope, res.MediaType) {
+			out = append(out, res)
+		}
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{"results": out})
+}
+
+// scopeAllowsMedia maps a Seerr media type ("movie"|"tv") to the poll's scope.
+func scopeAllowsMedia(scope poll.LibraryScope, mediaType string) bool {
+	switch scope {
+	case poll.ScopeMovies:
+		return mediaType == "movie"
+	case poll.ScopeSeries:
+		return mediaType == "tv"
+	default:
+		return mediaType == "movie" || mediaType == "tv"
+	}
+}
+
 type nominateReq struct {
-	ItemID string `json:"item_id"`
+	ItemID    string `json:"item_id"`
+	TMDBID    int    `json:"tmdb_id"`
+	MediaType string `json:"media_type"`
 }
 
 func (s *Server) handleNominate(w http.ResponseWriter, r *http.Request) {
@@ -239,12 +296,60 @@ func (s *Server) handleNominate(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, err)
 		return
 	}
-	if _, err := s.svc.SubmitNomination(r.Context(), p, me, req.ItemID); err != nil {
+	// A tmdb_id means a write-in (a title not in the library): resolve it via
+	// Seerr for an authoritative snapshot, then record it.
+	if req.TMDBID > 0 {
+		if !s.seerrEnabled() {
+			s.writeJSON(w, http.StatusBadRequest, errResp{"requesting new titles isn't available"})
+			return
+		}
+		in, err := s.resolveWriteIn(r.Context(), req.TMDBID, req.MediaType)
+		if err != nil {
+			s.writeErr(w, err)
+			return
+		}
+		if in == nil {
+			s.writeJSON(w, http.StatusBadRequest, errResp{"that title was not found"})
+			return
+		}
+		if _, err := s.svc.SubmitWriteIn(r.Context(), p, me, *in); err != nil {
+			s.writeErr(w, err)
+			return
+		}
+	} else if _, err := s.svc.SubmitNomination(r.Context(), p, me, req.ItemID); err != nil {
 		s.writeErr(w, err)
 		return
 	}
 	s.broadcast(p.ID, "nominations")
 	s.respondView(w, r, p, me)
+}
+
+// resolveWriteIn looks up a Seerr title by TMDB id and media type and maps it to
+// a write-in input. Returns (nil, nil) when the title isn't found.
+func (s *Server) resolveWriteIn(ctx context.Context, tmdbID int, mediaType string) (*poll.WriteInInput, error) {
+	var (
+		res *seerr.Result
+		err error
+	)
+	switch mediaType {
+	case "movie":
+		res, err = s.seerr.GetMovie(ctx, tmdbID)
+	case "tv":
+		res, err = s.seerr.GetTV(ctx, tmdbID)
+	default:
+		return nil, &poll.Error{Code: http.StatusBadRequest, Msg: "invalid media type"}
+	}
+	if err != nil || res == nil {
+		return nil, err
+	}
+	return &poll.WriteInInput{
+		TMDBID:    res.TMDBID,
+		MediaType: res.MediaType,
+		Title:     res.Title,
+		Year:      res.Year,
+		PosterURL: res.PosterURL,
+		Overview:  res.Overview,
+	}, nil
 }
 
 func (s *Server) handleWithdraw(w http.ResponseWriter, r *http.Request) {
@@ -280,7 +385,117 @@ func (s *Server) handleAdvance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.broadcast(p.ID, "status")
+	// When the poll just closed, auto-request any winning write-in via Seerr.
+	if p.Status == poll.StatusClosed {
+		s.autoRequestWinners(r.Context(), p)
+	}
 	s.respondView(w, r, p, me)
+}
+
+// handleRequestWinner lets the host request a winning write-in manually (for
+// polls with auto-request turned off).
+func (s *Server) handleRequestWinner(w http.ResponseWriter, r *http.Request) {
+	p, err := s.pollFromCode(r)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	me, ok := s.requireParticipant(w, r, p)
+	if !ok {
+		return
+	}
+	if !me.IsHost() {
+		s.writeJSON(w, http.StatusForbidden, errResp{"only the host can request the winner"})
+		return
+	}
+	if !s.seerrEnabled() {
+		s.writeJSON(w, http.StatusBadRequest, errResp{"Seerr is not configured"})
+		return
+	}
+	noms, err := s.repo.ListNominations(r.Context(), p.ID)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	var target *poll.Nomination
+	for i := range noms {
+		if noms[i].ID == id {
+			target = &noms[i]
+			break
+		}
+	}
+	if target == nil {
+		s.writeJSON(w, http.StatusNotFound, errResp{"nomination not found"})
+		return
+	}
+	if target.Snapshot.Source != poll.SourceSeerr {
+		s.writeJSON(w, http.StatusBadRequest, errResp{"that title is already in the library"})
+		return
+	}
+	if _, err := s.requestWriteIn(r.Context(), p, target); err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	s.broadcast(p.ID, "results")
+	s.respondView(w, r, p, me)
+}
+
+// requestWriteIn submits a Seerr request for a write-in nomination, recording the
+// outcome so it fires at most once. Returns the resulting status.
+func (s *Server) requestWriteIn(ctx context.Context, p *poll.Poll, n *poll.Nomination) (string, error) {
+	existing, err := s.repo.GetSeerrRequest(ctx, p.ID, n.ID)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil {
+		return existing.Status, nil // already requested
+	}
+	in := seerr.RequestInput{
+		MediaType: n.Snapshot.MediaType,
+		TMDBID:    n.Snapshot.TMDBID,
+		ServerID:  s.cfg.Seerr.ServerID,
+	}
+	if n.Snapshot.MediaType == "tv" {
+		in.ProfileID, in.RootFolder = s.cfg.Seerr.TVProfileID, s.cfg.Seerr.TVRootFolder
+	} else {
+		in.ProfileID, in.RootFolder = s.cfg.Seerr.MovieProfileID, s.cfg.Seerr.MovieRootFolder
+	}
+	res, err := s.seerr.CreateRequest(ctx, in)
+	if err != nil {
+		return "", err
+	}
+	rec := &poll.SeerrRequest{PollID: p.ID, NominationID: n.ID, TMDBID: n.Snapshot.TMDBID, MediaType: n.Snapshot.MediaType, Status: res.Status}
+	if err := s.repo.RecordSeerrRequest(ctx, rec); err != nil {
+		return res.Status, err
+	}
+	return res.Status, nil
+}
+
+// autoRequestWinners requests any winning write-in when the poll closes, best
+// effort — a Seerr hiccup never blocks closing the poll.
+func (s *Server) autoRequestWinners(ctx context.Context, p *poll.Poll) {
+	if !s.seerrEnabled() || !p.AutoRequestWinner {
+		return
+	}
+	res, noms, err := s.svc.Results(ctx, p)
+	if err != nil {
+		log.Printf("auto-request: results: %v", err)
+		return
+	}
+	byID := make(map[string]*poll.Nomination, len(noms))
+	for i := range noms {
+		byID[noms[i].ID] = &noms[i]
+	}
+	for _, id := range res.WinnerIDs {
+		n := byID[id]
+		if n == nil || n.Snapshot.Source != poll.SourceSeerr {
+			continue
+		}
+		if _, err := s.requestWriteIn(ctx, p, n); err != nil {
+			log.Printf("auto-request %q: %v", n.Snapshot.Title, err)
+		}
+	}
 }
 
 type voteReq struct {
