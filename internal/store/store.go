@@ -61,6 +61,8 @@ CREATE TABLE IF NOT EXISTS polls (
   genres              TEXT NOT NULL DEFAULT '[]',
   winner_nomination_id TEXT NOT NULL DEFAULT '',
   decided_at          TEXT,
+  allow_writeins      INTEGER NOT NULL DEFAULT 0,
+  auto_request_winner INTEGER NOT NULL DEFAULT 0,
   created_at          TEXT NOT NULL,
   round1_closes_at    TEXT,
   round2_closes_at    TEXT
@@ -102,6 +104,16 @@ CREATE TABLE IF NOT EXISTS votes (
   created_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_votes_participant ON votes(poll_id, participant_id);
+
+CREATE TABLE IF NOT EXISTS seerr_requests (
+  poll_id       TEXT NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+  nomination_id TEXT NOT NULL,
+  tmdb_id       INTEGER NOT NULL,
+  media_type    TEXT NOT NULL,
+  status        TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  PRIMARY KEY (poll_id, nomination_id)
+);
 `
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -123,6 +135,8 @@ func (s *Store) addColumns(ctx context.Context) error {
 		{"polls", "genres", "TEXT NOT NULL DEFAULT '[]'"},
 		{"polls", "winner_nomination_id", "TEXT NOT NULL DEFAULT ''"},
 		{"polls", "decided_at", "TEXT"},
+		{"polls", "allow_writeins", "INTEGER NOT NULL DEFAULT 0"},
+		{"polls", "auto_request_winner", "INTEGER NOT NULL DEFAULT 0"},
 	}
 	for _, c := range wanted {
 		has, err := s.columnExists(ctx, c.table, c.name)
@@ -225,11 +239,13 @@ func (s *Store) CreatePoll(ctx context.Context, p *poll.Poll, host *poll.Partici
 			INSERT INTO polls (id, code, title, host_participant_id, library_scope, status,
 				submission_rules, voting_method, voting_config, allow_guests, results_live,
 				reveal_nominators, reveal_scope, genres, winner_nomination_id, decided_at,
+				allow_writeins, auto_request_winner,
 				created_at, round1_closes_at, round2_closes_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			p.ID, p.Code, p.Title, p.HostParticipantID, string(p.LibraryScope), string(p.Status),
 			string(rules), p.VotingMethod, string(p.VotingConfig), boolToInt(p.AllowGuests), boolToInt(p.ResultsLive),
 			boolToInt(p.RevealNominators), p.RevealScope, string(genres), p.WinnerNominationID, timeText(p.DecidedAt),
+			boolToInt(p.AllowWriteins), boolToInt(p.AutoRequestWinner),
 			p.CreatedAt.UTC().Format(time.RFC3339Nano), timeText(p.Round1ClosesAt), timeText(p.Round2ClosesAt),
 		); err != nil {
 			return err
@@ -255,6 +271,7 @@ func (s *Store) GetPollByID(ctx context.Context, id string) (*poll.Poll, error) 
 const pollSelect = `SELECT id, code, title, host_participant_id, library_scope, status,
 	submission_rules, voting_method, voting_config, allow_guests, results_live,
 	reveal_nominators, reveal_scope, genres, winner_nomination_id, decided_at,
+	allow_writeins, auto_request_winner,
 	created_at, round1_closes_at, round2_closes_at FROM polls`
 
 func (s *Store) scanPoll(row *sql.Row) (*poll.Poll, error) {
@@ -266,12 +283,14 @@ func (s *Store) scanPoll(row *sql.Row) (*poll.Poll, error) {
 		revealNominators                 int
 		revealScope, genres, winnerNomID string
 		decidedAt                        sql.NullString
+		allowWriteins, autoRequestWinner int
 		createdAt                        string
 		r1, r2                           sql.NullString
 	)
 	err := row.Scan(&p.ID, &p.Code, &p.Title, &p.HostParticipantID, &scope, &status,
 		&rules, &vmethod, &vconfig, &allowGuests, &resultsLive,
 		&revealNominators, &revealScope, &genres, &winnerNomID, &decidedAt,
+		&allowWriteins, &autoRequestWinner,
 		&createdAt, &r1, &r2)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, poll.ErrNotFound
@@ -289,6 +308,8 @@ func (s *Store) scanPoll(row *sql.Row) (*poll.Poll, error) {
 	p.RevealScope = revealScope
 	p.WinnerNominationID = winnerNomID
 	p.DecidedAt = parseNullTime(decidedAt)
+	p.AllowWriteins = allowWriteins != 0
+	p.AutoRequestWinner = autoRequestWinner != 0
 	p.CreatedAt = parseTime(createdAt)
 	p.Round1ClosesAt = parseNullTime(r1)
 	p.Round2ClosesAt = parseNullTime(r2)
@@ -571,6 +592,40 @@ func (s *Store) HasVoted(ctx context.Context, pollID, participantID string) (boo
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM votes WHERE poll_id = ? AND participant_id = ?`,
 		pollID, participantID).Scan(&n)
 	return n > 0, err
+}
+
+// --- seerr requests ---
+
+func (s *Store) RecordSeerrRequest(ctx context.Context, req *poll.SeerrRequest) error {
+	if req.CreatedAt.IsZero() {
+		req.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO seerr_requests (poll_id, nomination_id, tmdb_id, media_type, status, created_at)
+		VALUES (?,?,?,?,?,?)
+		ON CONFLICT(poll_id, nomination_id) DO UPDATE SET status = excluded.status`,
+		req.PollID, req.NominationID, req.TMDBID, req.MediaType, req.Status,
+		req.CreatedAt.UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *Store) GetSeerrRequest(ctx context.Context, pollID, nominationID string) (*poll.SeerrRequest, error) {
+	var (
+		req       poll.SeerrRequest
+		createdAt string
+	)
+	err := s.db.QueryRowContext(ctx, `
+		SELECT poll_id, nomination_id, tmdb_id, media_type, status, created_at
+		FROM seerr_requests WHERE poll_id = ? AND nomination_id = ?`, pollID, nominationID).
+		Scan(&req.PollID, &req.NominationID, &req.TMDBID, &req.MediaType, &req.Status, &createdAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	req.CreatedAt = parseTime(createdAt)
+	return &req, nil
 }
 
 // --- helpers ---

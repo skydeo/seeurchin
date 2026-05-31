@@ -61,8 +61,10 @@ type Poll struct {
 	AllowGuests       bool            `json:"allow_guests"`
 	ResultsLive       bool            `json:"results_live"` // reveal tallies during round 2
 	RevealNominators  bool            `json:"reveal_nominators"`
-	RevealScope       string          `json:"reveal_scope"` // "winner" | "all" (when RevealNominators)
-	Genres            []string        `json:"genres"`       // nomination pool restricted to these genres (empty = all)
+	RevealScope       string          `json:"reveal_scope"`        // "winner" | "all" (when RevealNominators)
+	Genres            []string        `json:"genres"`              // nomination pool restricted to these genres (empty = all)
+	AllowWriteins     bool            `json:"allow_writeins"`      // allow nominating titles not in the library (via Seerr)
+	AutoRequestWinner bool            `json:"auto_request_winner"` // auto-request a winning write-in via Seerr on close
 	CreatedAt         time.Time       `json:"created_at"`
 	Round1ClosesAt    *time.Time      `json:"round1_closes_at,omitempty"`
 	Round2ClosesAt    *time.Time      `json:"round2_closes_at,omitempty"`
@@ -93,16 +95,25 @@ type Participant struct {
 // IsHost reports whether the participant is the poll host.
 func (p Participant) IsHost() bool { return p.Role == RoleHost }
 
-// ItemSnapshot captures the Jellyfin item details at nomination time so the
-// ballot renders even if the library changes later.
+// ItemSnapshot captures the item details at nomination time so the ballot
+// renders even if the library changes later. Library nominations leave the
+// write-in fields empty; Seerr write-ins carry Source/TMDBID/MediaType/PosterURL
+// instead of a Jellyfin ImageTag.
 type ItemSnapshot struct {
-	Title    string `json:"title"`
-	Year     int    `json:"year"`
-	Type     string `json:"type"`
-	Runtime  int    `json:"runtime_minutes"`
-	Overview string `json:"overview"`
-	ImageTag string `json:"image_tag"`
+	Title     string `json:"title"`
+	Year      int    `json:"year"`
+	Type      string `json:"type"`
+	Runtime   int    `json:"runtime_minutes"`
+	Overview  string `json:"overview"`
+	ImageTag  string `json:"image_tag"`
+	Source    string `json:"source,omitempty"`     // "" (jellyfin) | "seerr"
+	TMDBID    int    `json:"tmdb_id,omitempty"`    // write-ins only
+	MediaType string `json:"media_type,omitempty"` // "movie" | "tv" (write-ins)
+	PosterURL string `json:"poster_url,omitempty"` // external poster (write-ins)
 }
+
+// SourceSeerr marks a nomination that came from a Seerr/TMDB write-in.
+const SourceSeerr = "seerr"
 
 // Nomination is a candidate title in a poll. Nominators lists the participants
 // who nominated it (populated on read).
@@ -124,6 +135,17 @@ type Vote struct {
 	NominationID  string    `json:"nomination_id"`
 	Value         int       `json:"value"`
 	CreatedAt     time.Time `json:"created_at"`
+}
+
+// SeerrRequest records that a poll's winning write-in was requested via Seerr,
+// so the request fires once and its status can be shown on the results screen.
+type SeerrRequest struct {
+	PollID       string
+	NominationID string
+	TMDBID       int
+	MediaType    string
+	Status       string
+	CreatedAt    time.Time
 }
 
 // NewID returns a random 128-bit identifier as a 32-char hex string.

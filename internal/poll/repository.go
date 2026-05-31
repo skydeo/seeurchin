@@ -36,4 +36,10 @@ type Repository interface {
 	ListVotes(ctx context.Context, pollID string) ([]Vote, error)
 	CountVoters(ctx context.Context, pollID string) (int, error)
 	HasVoted(ctx context.Context, pollID, participantID string) (bool, error)
+
+	// RecordSeerrRequest stores the outcome of requesting a winning write-in
+	// (idempotent on (poll_id, nomination_id)). GetSeerrRequest returns it, or
+	// (nil, nil) if none exists.
+	RecordSeerrRequest(ctx context.Context, req *SeerrRequest) error
+	GetSeerrRequest(ctx context.Context, pollID, nominationID string) (*SeerrRequest, error)
 }

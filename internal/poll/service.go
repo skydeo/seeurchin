@@ -62,17 +62,19 @@ func NewService(repo Repository, items ItemResolver, codeLen int) *Service {
 
 // CreatePollInput describes a new poll.
 type CreatePollInput struct {
-	Title            string
-	HostName         string
-	LibraryScope     LibraryScope
-	SubmissionRules  SubmissionRules
-	VotingMethod     string
-	VotingConfig     json.RawMessage
-	AllowGuests      bool
-	ResultsLive      bool
-	RevealNominators bool
-	RevealScope      string
-	Genres           []string // restrict nominations to these genres (empty = any)
+	Title             string
+	HostName          string
+	LibraryScope      LibraryScope
+	SubmissionRules   SubmissionRules
+	VotingMethod      string
+	VotingConfig      json.RawMessage
+	AllowGuests       bool
+	ResultsLive       bool
+	RevealNominators  bool
+	RevealScope       string
+	Genres            []string // restrict nominations to these genres (empty = any)
+	AllowWriteins     bool
+	AutoRequestWinner bool
 }
 
 // CreatePoll validates input, opens a poll directly into round 1, and creates
@@ -125,19 +127,21 @@ func (s *Service) CreatePoll(ctx context.Context, in CreatePollInput) (*Poll, *P
 	}
 
 	p := &Poll{
-		ID:               NewID(),
-		Code:             code,
-		Title:            title,
-		LibraryScope:     in.LibraryScope,
-		Status:           StatusRound1,
-		SubmissionRules:  in.SubmissionRules,
-		VotingMethod:     in.VotingMethod,
-		VotingConfig:     cfg,
-		AllowGuests:      in.AllowGuests,
-		ResultsLive:      in.ResultsLive,
-		RevealNominators: in.RevealNominators,
-		RevealScope:      in.RevealScope,
-		Genres:           genres,
+		ID:                NewID(),
+		Code:              code,
+		Title:             title,
+		LibraryScope:      in.LibraryScope,
+		Status:            StatusRound1,
+		SubmissionRules:   in.SubmissionRules,
+		VotingMethod:      in.VotingMethod,
+		VotingConfig:      cfg,
+		AllowGuests:       in.AllowGuests,
+		ResultsLive:       in.ResultsLive,
+		RevealNominators:  in.RevealNominators,
+		RevealScope:       in.RevealScope,
+		Genres:            genres,
+		AllowWriteins:     in.AllowWriteins,
+		AutoRequestWinner: in.AutoRequestWinner,
 	}
 	host := &Participant{
 		ID:           NewID(),
@@ -272,6 +276,68 @@ func (s *Service) SubmitNomination(ctx context.Context, p *Poll, participant *Pa
 		return nil, errBad("this poll only allows: %s", strings.Join(p.Genres, ", "))
 	}
 
+	snap := ItemSnapshot{
+		Title:    item.Title,
+		Year:     item.Year,
+		Type:     item.Type,
+		Runtime:  item.Runtime,
+		Overview: item.Overview,
+		ImageTag: item.ImageTag,
+	}
+	return s.addNomination(ctx, p, participant, itemID, snap)
+}
+
+// WriteInInput describes a Seerr/TMDB title nominated even though it isn't in
+// the library.
+type WriteInInput struct {
+	TMDBID    int
+	MediaType string // "movie" | "tv"
+	Title     string
+	Year      int
+	PosterURL string
+	Overview  string
+}
+
+// SubmitWriteIn records a write-in (a title not in the library) for a poll that
+// allows them. Genre gating does not apply to write-ins.
+func (s *Service) SubmitWriteIn(ctx context.Context, p *Poll, participant *Participant, in WriteInInput) (*Nomination, error) {
+	if p.Status != StatusRound1 {
+		return nil, errConflict("nominations are closed")
+	}
+	if !p.AllowWriteins {
+		return nil, errForbid("this poll doesn't allow titles outside the library")
+	}
+	if in.MediaType != "movie" && in.MediaType != "tv" {
+		return nil, errBad("invalid media type %q", in.MediaType)
+	}
+	if in.TMDBID <= 0 || strings.TrimSpace(in.Title) == "" {
+		return nil, errBad("a title is required")
+	}
+	itemType := "Movie"
+	if in.MediaType == "tv" {
+		itemType = "Series"
+	}
+	if !scopeAllows(p.LibraryScope, itemType) {
+		return nil, errBad("%ss can't be nominated in this poll", strings.ToLower(itemType))
+	}
+	key := fmt.Sprintf("seerr:%s:%d", in.MediaType, in.TMDBID)
+	snap := ItemSnapshot{
+		Title:     in.Title,
+		Year:      in.Year,
+		Type:      itemType,
+		Overview:  in.Overview,
+		Source:    SourceSeerr,
+		TMDBID:    in.TMDBID,
+		MediaType: in.MediaType,
+		PosterURL: in.PosterURL,
+	}
+	return s.addNomination(ctx, p, participant, key, snap)
+}
+
+// addNomination enforces the per-participant cap and records a nomination keyed
+// by key (the Jellyfin item id for library titles, or a "seerr:<type>:<id>"
+// surrogate for write-ins).
+func (s *Service) addNomination(ctx context.Context, p *Poll, participant *Participant, key string, snap ItemSnapshot) (*Nomination, error) {
 	if max := p.SubmissionRules.effectiveMax(); max > 0 {
 		count, err := s.repo.CountNominationsByParticipant(ctx, p.ID, participant.ID)
 		if err != nil {
@@ -280,7 +346,7 @@ func (s *Service) SubmitNomination(ctx context.Context, p *Poll, participant *Pa
 		// Allow re-affirming an existing nomination; only block brand-new ones
 		// once at the cap.
 		if count >= max {
-			already, err := s.alreadyNominated(ctx, p.ID, itemID)
+			already, err := s.alreadyNominated(ctx, p.ID, key)
 			if err != nil {
 				return nil, err
 			}
@@ -289,19 +355,7 @@ func (s *Service) SubmitNomination(ctx context.Context, p *Poll, participant *Pa
 			}
 		}
 	}
-
-	n := &Nomination{
-		PollID:         p.ID,
-		JellyfinItemID: itemID,
-		Snapshot: ItemSnapshot{
-			Title:    item.Title,
-			Year:     item.Year,
-			Type:     item.Type,
-			Runtime:  item.Runtime,
-			Overview: item.Overview,
-			ImageTag: item.ImageTag,
-		},
-	}
+	n := &Nomination{PollID: p.ID, JellyfinItemID: key, Snapshot: snap}
 	return s.repo.AddNomination(ctx, n, participant.ID)
 }
 
