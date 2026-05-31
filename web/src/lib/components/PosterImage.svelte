@@ -4,11 +4,13 @@
 	let {
 		itemId,
 		tag = '',
-		title = ''
-	}: { itemId: string; tag?: string; title?: string } = $props();
+		title = '',
+		posterUrl = ''
+	}: { itemId: string; tag?: string; title?: string; posterUrl?: string } = $props();
 
 	let failed = $state(false);
-	const src = $derived(api.imageURL(itemId, tag));
+	// Write-ins carry an external (TMDB) poster URL; library items use the proxy.
+	const src = $derived(posterUrl || api.imageURL(itemId, tag));
 </script>
 
 <div class="relative aspect-[2/3] w-full overflow-hidden rounded-xl bg-slate-800 ring-1 ring-white/5">

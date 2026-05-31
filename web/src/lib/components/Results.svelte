@@ -1,10 +1,27 @@
 <script lang="ts">
+	import { api } from '$lib/api';
 	import type { PollView } from '$lib/types';
 	import PosterImage from './PosterImage.svelte';
 
-	let { poll }: { poll: PollView } = $props();
+	let {
+		poll,
+		code = '',
+		update
+	}: { poll: PollView; code?: string; update?: (p: PollView) => void } = $props();
 
 	const r = $derived(poll.results);
+	const isHost = $derived(poll.me?.is_host ?? false);
+
+	let reqError = $state('');
+	async function requestWinner(id: string) {
+		reqError = '';
+		try {
+			const p = await api.requestWinner(code, id);
+			update?.(p);
+		} catch (e) {
+			reqError = e instanceof Error ? e.message : 'request failed';
+		}
+	}
 	const nomById = $derived(new Map(poll.nominations.map((n) => [n.id, n])));
 	const max = $derived(Math.max(1, ...(r?.ranked.map((x) => x.score) ?? [1])));
 	const winnerIds = $derived(new Set(r?.winners.map((w) => w.nomination_id) ?? []));
@@ -30,7 +47,7 @@
 					<div class="w-36">
 						{#if n}
 							<div class="ring-2 ring-emerald-400 rounded-xl overflow-hidden shadow-lg shadow-emerald-500/20">
-								<PosterImage itemId={n.item_id} tag={n.image_tag} title={n.title} />
+								<PosterImage itemId={n.item_id} tag={n.image_tag} posterUrl={n.poster_url ?? ''} title={n.title} />
 							</div>
 							<p class="mt-2 font-semibold">{n.title}</p>
 							<p class="text-xs text-slate-500">{n.year || ''}</p>
@@ -40,10 +57,20 @@
 						{#if w.nominators && w.nominators.length > 0}
 							<p class="mt-1 text-xs text-slate-400">Nominated by {w.nominators.join(', ')}</p>
 						{/if}
+						{#if w.request_status}
+							<p class="mt-1 text-xs text-amber-300">Requested via Seerr · {w.request_status}</p>
+						{:else if n?.source === 'seerr' && poll.seerr_enabled && isHost}
+							<button
+								onclick={() => requestWinner(w.nomination_id)}
+								class="mt-2 w-full rounded-lg bg-amber-500 px-2 py-1.5 text-xs font-semibold text-white hover:bg-amber-600"
+							>Request via Seerr</button>
+						{/if}
 					</div>
 				{/each}
 			</div>
 		</div>
+
+		{#if reqError}<p class="mt-2 text-center text-xs text-rose-400">{reqError}</p>{/if}
 
 		{#if isRandom}
 			{#if others.length > 0}

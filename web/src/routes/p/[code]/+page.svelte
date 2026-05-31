@@ -58,7 +58,7 @@
 		{:else if poll.status === 'round2'}
 			<Ballot {poll} {code} {update} />
 		{:else}
-			<Results {poll} />
+			<Results {poll} {code} {update} />
 		{/if}
 	{/if}
 </main>

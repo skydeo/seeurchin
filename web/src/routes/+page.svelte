@@ -30,6 +30,9 @@
 	let allGenres = $state<string[]>([]);
 	let selectedGenres = $state<string[]>([]);
 	let genreError = $state('');
+	let seerrEnabled = $state(false);
+	let allowWriteins = $state(true);
+	let autoRequestWinner = $state(true);
 	let creating = $state(false);
 	let error = $state('');
 
@@ -39,6 +42,11 @@
 			if (methods.length) selectMethod(method);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'could not load voting methods';
+		}
+		try {
+			seerrEnabled = (await api.features()).seerr;
+		} catch {
+			seerrEnabled = false;
 		}
 	});
 
@@ -94,7 +102,9 @@
 			results_live: resultsLive,
 			reveal_nominators: revealNominators,
 			reveal_scope: revealScope,
-			genres: selectedGenres
+			genres: selectedGenres,
+			allow_writeins: seerrEnabled && allowWriteins,
+			auto_request_winner: seerrEnabled && allowWriteins && autoRequestWinner
 		};
 		creating = true;
 		try {
@@ -296,6 +306,18 @@
 						<option value="all">Every title</option>
 					</select>
 				</label>
+			{/if}
+			{#if seerrEnabled}
+				<label class="flex items-center justify-between gap-3 text-sm">
+					<span class="text-slate-300">Allow titles not in your library (via Seerr)</span>
+					<input type="checkbox" bind:checked={allowWriteins} class="h-5 w-5 accent-brand-500" />
+				</label>
+				{#if allowWriteins}
+					<label class="flex items-center justify-between gap-3 pl-1 text-sm">
+						<span class="text-slate-400">Auto-request the winner if it's a write-in</span>
+						<input type="checkbox" bind:checked={autoRequestWinner} class="h-5 w-5 accent-brand-500" />
+					</label>
+				{/if}
 			{/if}
 		</div>
 

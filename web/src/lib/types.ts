@@ -24,8 +24,21 @@ export interface NominationView {
 	runtime_minutes: number;
 	overview: string;
 	image_tag: string;
+	source?: string; // "seerr" for write-ins
+	poster_url?: string;
+	media_type?: string;
 	nominator_count: number;
 	mine_nominated: boolean;
+}
+
+export interface ExternalResult {
+	tmdb_id: number;
+	media_type: string; // "movie" | "tv"
+	title: string;
+	year: number;
+	poster_url: string;
+	overview: string;
+	in_library: boolean;
 }
 
 export interface ResultEntry {
@@ -33,6 +46,7 @@ export interface ResultEntry {
 	title: string;
 	score: number;
 	nominators?: string[];
+	request_status?: string; // Seerr status for a winning write-in
 }
 
 export interface RoundResult {
@@ -63,6 +77,9 @@ export interface PollView {
 	reveal_nominators: boolean;
 	reveal_scope: string;
 	genres: string[];
+	allow_writeins: boolean;
+	auto_request_winner: boolean;
+	seerr_enabled: boolean;
 	participant_count: number;
 	voter_count: number;
 	nominations: NominationView[];
@@ -99,4 +116,6 @@ export interface CreatePollBody {
 	reveal_nominators: boolean;
 	reveal_scope: string;
 	genres: string[];
+	allow_writeins: boolean;
+	auto_request_winner: boolean;
 }

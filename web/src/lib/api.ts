@@ -1,4 +1,11 @@
-import type { PollView, LibraryItem, VotingMethod, ResultsView, CreatePollBody } from './types';
+import type {
+	PollView,
+	LibraryItem,
+	VotingMethod,
+	ResultsView,
+	CreatePollBody,
+	ExternalResult
+} from './types';
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
 	const res = await fetch(url, {
@@ -17,8 +24,18 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
 
 export const api = {
 	methods: () => req<VotingMethod[]>('GET', '/api/methods'),
+	features: () => req<{ seerr: boolean }>('GET', '/api/features'),
 	genres: (scope: string) =>
 		req<{ genres: string[] }>('GET', `/api/genres?scope=${encodeURIComponent(scope)}`),
+	searchExternal: (code: string, q: string) =>
+		req<{ results: ExternalResult[] }>(
+			'GET',
+			`/api/polls/${code}/search-external?q=${encodeURIComponent(q)}`
+		),
+	nominateExternal: (code: string, tmdb_id: number, media_type: string) =>
+		req<PollView>('POST', `/api/polls/${code}/nominations`, { tmdb_id, media_type }),
+	requestWinner: (code: string, nominationId: string) =>
+		req<PollView>('POST', `/api/polls/${code}/request/${nominationId}`),
 	createPoll: (body: CreatePollBody) => req<PollView>('POST', '/api/polls', body),
 	getPoll: (code: string) => req<PollView>('GET', `/api/polls/${code}`),
 	join: (code: string, display_name: string) =>

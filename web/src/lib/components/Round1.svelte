@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { PollView, LibraryItem } from '$lib/types';
+	import type { PollView, LibraryItem, ExternalResult } from '$lib/types';
 	import PosterImage from './PosterImage.svelte';
 
 	let {
@@ -13,6 +13,7 @@
 	const mine = $derived(poll.nominations.filter((n) => n.mine_nominated));
 	const isHost = $derived(poll.me?.is_host ?? false);
 	const isRandom = $derived(poll.voting_method === 'random');
+	const canWriteIn = $derived(poll.seerr_enabled && poll.allow_writeins);
 
 	const guidance = $derived.by(() => {
 		const r = poll.submission_rules;
@@ -44,9 +45,11 @@
 
 	// --- browse modal ---
 	let browseOpen = $state(false);
+	let browseTab = $state<'library' | 'external'>('library');
 	let query = $state('');
 	let typeFilter = $state(''); // '', 'movie', 'series'
 	let items = $state<LibraryItem[]>([]);
+	let externalItems = $state<ExternalResult[]>([]);
 	let searching = $state(false);
 	let searchError = $state('');
 	let timer: ReturnType<typeof setTimeout>;
@@ -63,17 +66,57 @@
 		}
 	}
 
+	async function runExternalSearch() {
+		if (query.trim().length < 2) {
+			externalItems = [];
+			searching = false;
+			return;
+		}
+		searching = true;
+		searchError = '';
+		try {
+			externalItems = (await api.searchExternal(code, query)).results;
+		} catch (err) {
+			searchError = err instanceof Error ? err.message : 'search failed';
+		} finally {
+			searching = false;
+		}
+	}
+
 	$effect(() => {
 		// Track deps; debounce while the modal is open.
 		query;
 		typeFilter;
+		browseTab;
 		if (!browseOpen) return;
 		clearTimeout(timer);
-		timer = setTimeout(runSearch, 250);
+		timer = setTimeout(browseTab === 'external' ? runExternalSearch : runSearch, 250);
 		return () => clearTimeout(timer);
 	});
 
+	// The "seerr:<type>:<tmdb>" surrogate key matches how the backend stores
+	// write-ins, so we can tell which external results are already nominated.
+	function writeInKey(r: ExternalResult) {
+		return `seerr:${r.media_type}:${r.tmdb_id}`;
+	}
+
+	async function toggleExternal(r: ExternalResult) {
+		actionError = '';
+		const key = writeInKey(r);
+		try {
+			if (nominatedIds.has(key)) {
+				const nom = poll.nominations.find((n) => n.item_id === key);
+				if (nom) update(await api.withdraw(code, nom.id));
+			} else {
+				update(await api.nominateExternal(code, r.tmdb_id, r.media_type));
+			}
+		} catch (err) {
+			actionError = err instanceof Error ? err.message : 'something went wrong';
+		}
+	}
+
 	function openBrowse() {
+		browseTab = 'library';
 		browseOpen = true;
 	}
 </script>
@@ -123,12 +166,15 @@
 			{#each poll.nominations as n (n.id)}
 				<button onclick={() => toggle(n.item_id)} class="group text-left">
 					<div class="relative">
-						<PosterImage itemId={n.item_id} tag={n.image_tag} title={n.title} />
+						<PosterImage itemId={n.item_id} tag={n.image_tag} posterUrl={n.poster_url ?? ''} title={n.title} />
 						{#if n.mine_nominated}
 							<span class="absolute right-1.5 top-1.5 rounded-full bg-brand-500 px-2 py-0.5 text-[10px] font-bold text-white shadow">YOURS</span>
 						{/if}
 						{#if n.nominator_count > 1}
 							<span class="absolute left-1.5 top-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white">×{n.nominator_count}</span>
+						{/if}
+						{#if n.source === 'seerr'}
+							<span class="absolute bottom-1.5 left-1.5 rounded-full bg-amber-500/90 px-2 py-0.5 text-[10px] font-bold text-white shadow">REQUEST</span>
 						{/if}
 					</div>
 					<p class="mt-1 truncate text-xs font-medium">{n.title}</p>
@@ -167,17 +213,28 @@
 {#if browseOpen}
 	<div class="fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur">
 		<div class="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col p-4">
+			{#if canWriteIn}
+				<div class="mb-3 flex gap-2 text-sm">
+					{#each [ ['library', 'In your library'], ['external', 'Request something new'] ] as [val, label] (val)}
+						<button
+							onclick={() => (browseTab = val as typeof browseTab)}
+							class="flex-1 rounded-xl px-3 py-2 font-medium {browseTab === val ? 'bg-brand-500 text-white' : 'bg-slate-800 text-slate-300'}"
+						>{label}</button>
+					{/each}
+				</div>
+			{/if}
+
 			<div class="flex items-center gap-3">
 				<input
 					bind:value={query}
-					placeholder="Search the library…"
+					placeholder={browseTab === 'external' ? 'Search for any movie or show…' : 'Search the library…'}
 					autocomplete="off"
 					class="w-full rounded-xl bg-slate-800 px-4 py-3 ring-1 ring-white/10 outline-none focus:ring-2 focus:ring-brand-500"
 				/>
 				<button onclick={() => (browseOpen = false)} class="rounded-xl px-3 py-3 text-slate-400 hover:text-white">Done</button>
 			</div>
 
-			{#if poll.library_scope === 'both'}
+			{#if poll.library_scope === 'both' && browseTab === 'library'}
 				<div class="mt-3 flex gap-2 text-sm">
 					{#each [ ['', 'All'], ['movie', 'Movies'], ['series', 'Shows'] ] as [val, label] (val)}
 						<button
@@ -193,6 +250,40 @@
 					<p class="py-10 text-center text-slate-400">Searching…</p>
 				{:else if searchError}
 					<p class="py-10 text-center text-rose-400">{searchError}</p>
+				{:else if browseTab === 'external'}
+					{#if query.trim().length < 2}
+						<p class="py-10 text-center text-slate-400">Type a title to search for something to request.</p>
+					{:else if externalItems.length === 0}
+						<p class="py-10 text-center text-slate-400">No titles found.</p>
+					{:else}
+						<div class="grid grid-cols-3 gap-3 pb-6 sm:grid-cols-4 md:grid-cols-5">
+							{#each externalItems as r (r.media_type + r.tmdb_id)}
+								{@const key = writeInKey(r)}
+								{@const picked = nominatedIds.has(key)}
+								{@const blocked = r.in_library || (atMax && !picked)}
+								<button
+									onclick={() => !blocked && toggleExternal(r)}
+									class="group text-left {blocked && !picked ? 'opacity-40' : ''}"
+									disabled={blocked}
+								>
+									<div class="relative">
+										<PosterImage itemId={key} posterUrl={r.poster_url} title={r.title} />
+										{#if picked}
+											<div class="absolute inset-0 flex items-center justify-center rounded-xl bg-brand-500/40 ring-2 ring-brand-400">
+												<span class="rounded-full bg-brand-500 px-2 py-1 text-xs font-bold text-white">✓ Picked</span>
+											</div>
+										{:else if r.in_library}
+											<div class="absolute inset-0 flex items-center justify-center rounded-xl bg-black/50">
+												<span class="rounded-full bg-slate-700 px-2 py-1 text-xs font-semibold text-white">In library</span>
+											</div>
+										{/if}
+									</div>
+									<p class="mt-1 truncate text-xs font-medium">{r.title}</p>
+									<p class="text-[11px] text-slate-500">{r.year || ''}</p>
+								</button>
+							{/each}
+						</div>
+					{/if}
 				{:else if items.length === 0}
 					<p class="py-10 text-center text-slate-400">No titles found.</p>
 				{:else}
