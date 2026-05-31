@@ -28,6 +28,7 @@ type Config struct {
 	SessionSecretGenerated bool
 
 	Jellyfin JellyfinConfig
+	Seerr    SeerrConfig
 
 	// EnableUserLogin turns on Jellyfin username/password login (Phase 2).
 	// When false, only guest identities are available.
@@ -45,6 +46,26 @@ type JellyfinConfig struct {
 	APIKey string
 }
 
+// SeerrConfig describes an optional Seerr (Overseerr/Jellyseerr) server used for
+// write-in nominations (external search) and auto-requesting the winner. The
+// feature is enabled only when both URL and APIKey are set.
+type SeerrConfig struct {
+	// URL is the base URL of the Seerr server, e.g. "http://seerr:5055".
+	URL string
+	// APIKey is a Seerr API key (Settings -> General -> API Key).
+	APIKey string
+	// Optional request defaults; applied to created requests only when set,
+	// otherwise Seerr's own defaults are used. Int fields use -1 for "unset".
+	MovieProfileID  int
+	TVProfileID     int
+	MovieRootFolder string
+	TVRootFolder    string
+	ServerID        int
+}
+
+// Enabled reports whether Seerr is configured (URL + API key present).
+func (s SeerrConfig) Enabled() bool { return s.URL != "" && s.APIKey != "" }
+
 // FromEnv builds a Config from the process environment, applying defaults and
 // validating required fields.
 func FromEnv() (Config, error) {
@@ -57,6 +78,15 @@ func FromEnv() (Config, error) {
 		Jellyfin: JellyfinConfig{
 			URL:    strings.TrimRight(os.Getenv("JELLYFIN_URL"), "/"),
 			APIKey: os.Getenv("JELLYFIN_API_KEY"),
+		},
+		Seerr: SeerrConfig{
+			URL:             strings.TrimRight(os.Getenv("SEERR_URL"), "/"),
+			APIKey:          os.Getenv("SEERR_API_KEY"),
+			MovieProfileID:  envInt("SEERR_MOVIE_PROFILE_ID", -1),
+			TVProfileID:     envInt("SEERR_TV_PROFILE_ID", -1),
+			MovieRootFolder: strings.TrimSpace(os.Getenv("SEERR_MOVIE_ROOT_FOLDER")),
+			TVRootFolder:    strings.TrimSpace(os.Getenv("SEERR_TV_ROOT_FOLDER")),
+			ServerID:        envInt("SEERR_SERVER_ID", -1),
 		},
 	}
 
@@ -100,6 +130,18 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func envInt(key string, def int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 func envBool(key string, def bool) bool {

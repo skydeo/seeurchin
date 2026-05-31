@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>seeurchin — brand assets</title>
+<link rel="icon" type="image/png" sizes="32x32" href="brand/favicon-32.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=Quicksand:wght@500;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ocean:#0e5a7d; --ocean-deep:#0a3f59; --teal:#11b3aa; --teal-bright:#1ccfc3;
+    --coral:#ff6f5e; --mango:#ffa23a; --sun:#ffce5c; --ink:#143a45; --ink-soft:#4a6670;
+    --sand:#fdf7ec; --sand-deep:#f4e9d2; --card:#fff; --line:#ece2cf;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--sand);color:var(--ink);font-family:"Nunito",system-ui,sans-serif;-webkit-font-smoothing:antialiased;line-height:1.5;}
+  .wrap{max-width:940px;margin:0 auto;padding:44px 24px 80px;}
+
+  .masthead{display:flex;align-items:center;gap:14px;}
+  .masthead img{width:42px;height:42px;}
+  .masthead .wm{font-family:"Baloo 2",sans-serif;font-weight:600;font-size:30px;letter-spacing:-0.005em;color:var(--ink);}
+  .eyebrow{font-size:12px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:var(--teal);margin:18px 0 6px;}
+  .lede{max-width:60ch;font-size:16px;color:var(--ink-soft);margin:0;text-wrap:pretty;}
+  .lede b{color:var(--ink);}
+
+  h2{font-family:"Quicksand",sans-serif;font-weight:700;font-size:13px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-soft);margin:44px 0 16px;border-top:1px solid var(--line);padding-top:24px;}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px;}
+  .grid{display:grid;gap:16px;}
+  .g3{grid-template-columns:repeat(3,1fr);}
+  .g2{grid-template-columns:repeat(2,1fr);}
+  .g4{grid-template-columns:repeat(4,1fr);}
+
+  .lockup{display:flex;align-items:center;justify-content:center;gap:20px;padding:40px 16px;background:linear-gradient(180deg,#fffdf8,#fbf4e6);border-radius:16px;border:1px solid var(--line);}
+  .lockup img{width:84px;height:84px;}
+  .lockup .wm{font-family:"Baloo 2",sans-serif;font-weight:600;font-size:52px;letter-spacing:-0.005em;color:var(--ink);line-height:1;}
+
+  .asset{border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;align-items:center;gap:12px;}
+  .asset .stage{width:100%;min-height:120px;border-radius:10px;display:grid;place-items:center;}
+  .asset .stage.light{background:#fff;}
+  .asset .stage.sand{background:linear-gradient(160deg,#fffdf8,var(--sand-deep));}
+  .asset .stage.dark{background:linear-gradient(135deg,var(--ocean),var(--ocean-deep));}
+  .asset .stage img{width:72px;height:72px;}
+  .asset .fn{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--ink-soft);}
+  .asset .lbl{font-size:13px;font-weight:700;color:var(--ink);}
+
+  .icns{display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap;}
+  .icns img{border-radius:22%;box-shadow:0 8px 22px -10px rgba(20,58,69,.4);}
+
+  .favs{display:flex;align-items:flex-end;gap:26px;justify-content:center;padding:10px 0;}
+  .fav{display:flex;flex-direction:column;align-items:center;gap:8px;}
+  .fav .px{font-size:11px;color:#aeb9bc;font-weight:700;}
+  .favchrome{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:9px 9px 0 0;padding:7px 12px 7px 10px;box-shadow:0 1px 0 var(--line);}
+  .favchrome img{width:16px;height:16px;}
+  .favchrome span{font-size:12.5px;color:var(--ink-soft);}
+
+  .swatches{display:flex;gap:12px;flex-wrap:wrap;}
+  .sw{text-align:center;}
+  .sw .chip{width:56px;height:56px;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.06);}
+  .sw .nm{font-size:11px;font-weight:700;color:var(--ink-soft);margin-top:6px;}
+  .sw .hx{font-size:10px;color:#a9b5b9;font-family:ui-monospace,monospace;}
+
+  .specrow{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .spec{border:1px solid var(--line);border-radius:14px;padding:18px 20px;}
+  .spec .k{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#aeb9bc;}
+  .spec .v{font-size:15px;color:var(--ink);margin-top:6px;}
+  .spec .v b{font-weight:700;}
+
+  pre{background:var(--ink);color:#dff3f0;border-radius:14px;padding:20px 22px;overflow:auto;font-size:12.5px;line-height:1.7;font-family:ui-monospace,monospace;}
+  pre .c{color:#7fb5a8;}
+  pre .t{color:#ffce5c;}
+  pre .a{color:#ff9e8f;}
+
+  .clearspace{display:flex;gap:24px;align-items:center;flex-wrap:wrap;justify-content:center;}
+  .cs-box{position:relative;padding:38px;background:repeating-linear-gradient(45deg,#fff,#fff 6px,#faf3e4 6px,#faf3e4 12px);border:1px dashed #d9cdb4;border-radius:12px;}
+  .cs-box .inner{background:#fff;padding:0;display:grid;place-items:center;}
+  .cs-box img{width:92px;height:92px;display:block;}
+
+  footer{margin-top:46px;text-align:center;font-size:13px;color:#aeb9bc;}
+
+  @media(max-width:720px){
+    .g3,.g4,.specrow{grid-template-columns:1fr 1fr;}
+    .lockup{flex-direction:column;gap:12px;}
+    .lockup .wm{font-size:40px;}
+  }
+  @media(max-width:430px){
+    .wrap{padding:30px 16px 60px;}
+    .g2,.g3,.g4,.specrow{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <img src="brand/seeurchin-mark.svg" alt="seeurchin mark" />
+    <span class="wm">seeurchin</span>
+  </div>
+  <p class="eyebrow">Brand assets · “Reef”</p>
+  <p class="lede">Final logo and production-ready files. The mark is the <b>Reef</b> urchin — twelve thick, rounded spikes in poll colors (coral, teal, mango, ocean) radiating from an ink hub, reading as <b>individual votes</b> gathered around a pick. Wordmark set in <b>Baloo&nbsp;2 SemiBold</b>, lowercase.</p>
+
+  <h2>Primary lockup</h2>
+  <div class="lockup">
+    <img src="brand/seeurchin-mark.svg" alt="seeurchin mark" />
+    <span class="wm">seeurchin</span>
+  </div>
+
+  <h2>The mark · three cuts</h2>
+  <div class="grid g3">
+    <div class="asset"><div class="stage light"><img src="brand/seeurchin-mark.svg" alt="color mark" /></div><span class="lbl">Full color</span><span class="fn">seeurchin-mark.svg</span></div>
+    <div class="asset"><div class="stage dark"><img src="brand/seeurchin-mark-white.svg" alt="reversed mark" /></div><span class="lbl">Reversed</span><span class="fn">seeurchin-mark-white.svg</span></div>
+    <div class="asset"><div class="stage sand"><img src="brand/seeurchin-mark-ink.svg" alt="mono mark" /></div><span class="lbl">Mono / ink</span><span class="fn">seeurchin-mark-ink.svg</span></div>
+  </div>
+
+  <h2>App icons</h2>
+  <div class="grid g2">
+    <div class="asset">
+      <div class="stage light"><div class="icns"><img src="brand/appicon-sand-512.png" width="96" height="96" alt="sand app icon" /><img src="brand/appicon-sand-512.png" width="60" height="60" alt="sand app icon small" /></div></div>
+      <span class="lbl">Sand · light</span><span class="fn">appicon-sand-512 / 1024.png</span>
+    </div>
+    <div class="asset">
+      <div class="stage light"><div class="icns"><img src="brand/appicon-ocean-512.png" width="96" height="96" alt="ocean app icon" /><img src="brand/appicon-ocean-512.png" width="60" height="60" alt="ocean app icon small" /></div></div>
+      <span class="lbl">Ocean · dark</span><span class="fn">appicon-ocean-512 / 1024.png</span>
+    </div>
+  </div>
+
+  <h2>Favicon · shown at true size</h2>
+  <div class="card">
+    <div class="favs">
+      <div class="fav"><img src="brand/favicon-16.png" width="16" height="16" alt="16px" /><span class="px">16 px</span></div>
+      <div class="fav"><img src="brand/favicon-32.png" width="32" height="32" alt="32px" /><span class="px">32 px</span></div>
+      <div class="fav"><img src="brand/favicon-48.png" width="48" height="48" alt="48px" /><span class="px">48 px</span></div>
+      <div class="fav">
+        <div class="favchrome"><img src="brand/favicon-16.png" alt="tab favicon" /><span>vote · seeurchin</span></div>
+        <span class="px">in a browser tab</span>
+      </div>
+    </div>
+    <p class="lede" style="margin-top:18px;font-size:13.5px;">At 16&nbsp;px the colored spikes read as a lively burst rather than crisp lines — that's expected for a multi-color mark and still scans as “seeurchin” in a tab. If you ever want a sharper 16&nbsp;px tab icon, the mono ink cut or a single-teal version is the cleanest fallback — say the word.</p>
+  </div>
+
+  <h2>Wire it up</h2>
+  <pre><span class="c">&lt;!-- in your &lt;head&gt; --&gt;</span>
+<span class="a">&lt;link</span> <span class="t">rel</span>=<span class="t">"icon"</span> <span class="t">type</span>=<span class="t">"image/png"</span> <span class="t">sizes</span>=<span class="t">"32x32"</span> <span class="t">href</span>=<span class="t">"/brand/favicon-32.png"</span><span class="a">&gt;</span>
+<span class="a">&lt;link</span> <span class="t">rel</span>=<span class="t">"icon"</span> <span class="t">type</span>=<span class="t">"image/png"</span> <span class="t">sizes</span>=<span class="t">"16x16"</span> <span class="t">href</span>=<span class="t">"/brand/favicon-16.png"</span><span class="a">&gt;</span>
+<span class="a">&lt;link</span> <span class="t">rel</span>=<span class="t">"apple-touch-icon"</span> <span class="t">sizes</span>=<span class="t">"180x180"</span> <span class="t">href</span>=<span class="t">"/brand/apple-touch-icon-180.png"</span><span class="a">&gt;</span>
+
+<span class="c">&lt;!-- manifest.webmanifest --&gt;</span>
+<span class="t">"icons"</span>: [
+  { <span class="t">"src"</span>: <span class="t">"/brand/icon-192.png"</span>, <span class="t">"sizes"</span>: <span class="t">"192x192"</span>, <span class="t">"type"</span>: <span class="t">"image/png"</span>, <span class="t">"purpose"</span>: <span class="t">"maskable"</span> },
+  { <span class="t">"src"</span>: <span class="t">"/brand/icon-512.png"</span>, <span class="t">"sizes"</span>: <span class="t">"512x512"</span>, <span class="t">"type"</span>: <span class="t">"image/png"</span>, <span class="t">"purpose"</span>: <span class="t">"maskable"</span> }
+]</pre>
+
+  <h2>Palette</h2>
+  <div class="card">
+    <div class="swatches">
+      <div class="sw"><div class="chip" style="background:#0e5a7d"></div><div class="nm">Ocean</div><div class="hx">#0e5a7d</div></div>
+      <div class="sw"><div class="chip" style="background:#11b3aa"></div><div class="nm">Teal</div><div class="hx">#11b3aa</div></div>
+      <div class="sw"><div class="chip" style="background:#ff6f5e"></div><div class="nm">Coral</div><div class="hx">#ff6f5e</div></div>
+      <div class="sw"><div class="chip" style="background:#ffa23a"></div><div class="nm">Mango</div><div class="hx">#ffa23a</div></div>
+      <div class="sw"><div class="chip" style="background:#ffce5c"></div><div class="nm">Sun</div><div class="hx">#ffce5c</div></div>
+      <div class="sw"><div class="chip" style="background:#143a45"></div><div class="nm">Ink</div><div class="hx">#143a45</div></div>
+      <div class="sw"><div class="chip" style="background:#fdf7ec"></div><div class="nm">Sand</div><div class="hx">#fdf7ec</div></div>
+    </div>
+  </div>
+
+  <h2>Usage</h2>
+  <div class="specrow">
+    <div class="spec"><div class="k">Typeface</div><div class="v"><b>Baloo&nbsp;2 SemiBold</b> for the wordmark · always lowercase “seeurchin”.</div></div>
+    <div class="spec"><div class="k">Min mark size</div><div class="v">16&nbsp;px digital. Below ~14&nbsp;px, use the mono ink cut.</div></div>
+    <div class="spec"><div class="k">Clear space</div><div class="v">Keep one spike-length of padding clear on all sides (shown right).</div></div>
+    <div class="spec"><div class="k">On photos</div><div class="v">Use the reversed (white) cut, or place on the ocean squircle.</div></div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="clearspace">
+      <div class="cs-box"><div class="inner"><img src="brand/seeurchin-mark.svg" alt="clear space" /></div></div>
+      <div class="lede" style="font-size:13.5px;max-width:34ch;">The hatched margin equals the radius of one spike — the minimum breathing room around the mark in any lockup.</div>
+    </div>
+  </div>
+
+  <footer>seeurchin · self-hosted movie voting for your Jellyfin stack · all assets in <b>/brand</b></footer>
+
+</div>
+</body>
+</html>
