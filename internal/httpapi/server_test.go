@@ -227,6 +227,46 @@ func TestRevealNominatorsOnResults(t *testing.T) {
 	}
 }
 
+func TestRandomPollPicksAndFreezesWinner(t *testing.T) {
+	ts := newTestServer(t)
+	host := newClient(t)
+	guest := newClient(t)
+
+	var created pollView
+	do(t, host, http.MethodPost, ts.URL+"/api/polls", map[string]any{
+		"title": "Roll", "host_name": "Alice", "library_scope": "movie",
+		"voting_method": "random", "allow_guests": true,
+	}, &created)
+	code := created.Code
+
+	do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/nominations", map[string]string{"item_id": "m1"}, nil)
+	do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/nominations", map[string]string{"item_id": "m2"}, nil)
+	do(t, guest, http.MethodPost, ts.URL+"/api/polls/"+code+"/join", map[string]string{"display_name": "Bob"}, nil)
+	do(t, guest, http.MethodPost, ts.URL+"/api/polls/"+code+"/nominations", map[string]string{"item_id": "m3"}, nil)
+
+	// A random poll skips round 2: advancing from round 1 closes it directly.
+	var closed pollView
+	if c := do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/advance", nil, &closed); c != http.StatusOK {
+		t.Fatalf("advance status = %d", c)
+	}
+	if closed.Status != "closed" {
+		t.Fatalf("status = %q, want closed (random skips voting)", closed.Status)
+	}
+	if closed.Results == nil || len(closed.Results.Winners) != 1 {
+		t.Fatalf("expected exactly one random winner, got %+v", closed.Results)
+	}
+	winner := closed.Results.Winners[0].NominationID
+
+	// The draw is frozen: fetching results again returns the same winner.
+	for i := 0; i < 3; i++ {
+		var again pollView
+		do(t, guest, http.MethodGet, ts.URL+"/api/polls/"+code, nil, &again)
+		if again.Results == nil || len(again.Results.Winners) != 1 || again.Results.Winners[0].NominationID != winner {
+			t.Fatalf("winner changed across reads: got %+v, want %s", again.Results, winner)
+		}
+	}
+}
+
 func TestGuestRejectedWhenDisallowed(t *testing.T) {
 	ts := newTestServer(t)
 	host := newClient(t)

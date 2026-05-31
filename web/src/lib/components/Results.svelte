@@ -10,6 +10,8 @@
 	const winnerIds = $derived(new Set(r?.winners.map((w) => w.nomination_id) ?? []));
 	const isTie = $derived((r?.winners.length ?? 0) > 1);
 	const hasWinner = $derived((r?.winners.length ?? 0) > 0);
+	const isRandom = $derived(r?.method === 'random');
+	const others = $derived((r?.ranked ?? []).filter((e) => !winnerIds.has(e.nomination_id)));
 </script>
 
 <section class="space-y-6">
@@ -20,7 +22,7 @@
 	{:else}
 		<div class="text-center">
 			<p class="text-sm font-semibold uppercase tracking-wide text-emerald-400">
-				{isTie ? "It's a tie!" : 'The winner is'}
+				{isRandom ? '🎲 Randomly selected' : isTie ? "It's a tie!" : 'The winner is'}
 			</p>
 			<div class="mt-4 flex flex-wrap justify-center gap-4">
 				{#each r.winners as w (w.nomination_id)}
@@ -43,6 +45,20 @@
 			</div>
 		</div>
 
+		{#if isRandom}
+			{#if others.length > 0}
+				<div class="rounded-2xl bg-slate-900/70 p-4 ring-1 ring-white/10">
+					<h3 class="text-sm font-semibold text-slate-300">The other nominations</h3>
+					<ul class="mt-3 space-y-1.5 text-sm text-slate-400">
+						{#each others as e (e.nomination_id)}
+							<li>
+								{e.title}{#if e.nominators && e.nominators.length > 0}<span class="text-slate-500"> · by {e.nominators.join(', ')}</span>{/if}
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+		{:else}
 		<div class="rounded-2xl bg-slate-900/70 p-4 ring-1 ring-white/10">
 			<h3 class="text-sm font-semibold text-slate-300">Full results</h3>
 			<div class="mt-3 space-y-2.5">
@@ -72,5 +88,6 @@
 				</p>
 			{/if}
 		</div>
+	{/if}
 	{/if}
 </section>

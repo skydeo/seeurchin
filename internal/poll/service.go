@@ -296,6 +296,27 @@ func (s *Service) Advance(ctx context.Context, p *Poll, participant *Participant
 		if len(noms) < 2 {
 			return nil, errConflict("need at least 2 nominations to start voting")
 		}
+		// Methods that decide without a voting round (e.g. random) close
+		// immediately: draw the winner once and freeze it.
+		if dec, ok := voting.Decider(p.VotingMethod); ok {
+			ids := make([]string, len(noms))
+			for i, n := range noms {
+				ids[i] = n.ID
+			}
+			winner, err := dec.Decide(p.VotingConfig, ids)
+			if err != nil {
+				return nil, errBad("%v", err)
+			}
+			if err := s.repo.SetPollWinner(ctx, p.ID, winner); err != nil {
+				return nil, err
+			}
+			if err := s.repo.UpdatePollStatus(ctx, p.ID, StatusClosed); err != nil {
+				return nil, err
+			}
+			p.WinnerNominationID = winner
+			p.Status = StatusClosed
+			return p, nil
+		}
 		if err := s.repo.UpdatePollStatus(ctx, p.ID, StatusRound2); err != nil {
 			return nil, err
 		}
@@ -382,6 +403,11 @@ func (s *Service) Results(ctx context.Context, p *Poll) (voting.Results, []Nomin
 	res, err := method.Tally(p.VotingConfig, allIDs, ballots)
 	if err != nil {
 		return voting.Results{}, nil, err
+	}
+	// A frozen winner (random pick, or any decided-once method) is authoritative
+	// over the tally.
+	if p.WinnerNominationID != "" {
+		res.WinnerIDs = []string{p.WinnerNominationID}
 	}
 	return res, noms, nil
 }

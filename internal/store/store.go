@@ -312,6 +312,16 @@ func (s *Store) UpdatePollStatus(ctx context.Context, id string, status poll.Sta
 	return mustAffect(res)
 }
 
+func (s *Store) SetPollWinner(ctx context.Context, id, nominationID string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE polls SET winner_nomination_id = ?, decided_at = ? WHERE id = ?`,
+		nominationID, nowText(), id)
+	if err != nil {
+		return err
+	}
+	return mustAffect(res)
+}
+
 func (s *Store) CodeExists(ctx context.Context, code string) (bool, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM polls WHERE code = ?`, code).Scan(&n)

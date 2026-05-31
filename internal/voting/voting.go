@@ -63,6 +63,25 @@ type Method interface {
 	Tally(raw json.RawMessage, allIDs []string, ballots []Ballot) (Results, error)
 }
 
+// AutoDecider is an optional interface for methods that choose a winner without
+// a voting round (e.g. Random). A poll whose method is an AutoDecider skips
+// round 2: the host closes round 1 and Decide picks the winner, which is then
+// persisted so it stays stable across reads.
+type AutoDecider interface {
+	Method
+	Decide(raw json.RawMessage, allIDs []string) (string, error)
+}
+
+// Decider returns the registered method for key if it decides without voting.
+func Decider(key string) (AutoDecider, bool) {
+	m, ok := registry[key]
+	if !ok {
+		return nil, false
+	}
+	d, ok := m.(AutoDecider)
+	return d, ok
+}
+
 var registry = map[string]Method{}
 
 // Register adds a method to the registry, replacing any existing one with the
@@ -89,6 +108,7 @@ func init() {
 	Register(Approval{})
 	Register(Ranked{})
 	Register(Score{})
+	Register(Random{})
 }
 
 // selfVoteLimit resolves the effective cap on a voter's support for their own

@@ -11,6 +11,9 @@ type Repository interface {
 	GetPollByCode(ctx context.Context, code string) (*Poll, error)
 	GetPollByID(ctx context.Context, id string) (*Poll, error)
 	UpdatePollStatus(ctx context.Context, id string, status Status) error
+	// SetPollWinner freezes the decided winner (for methods that decide without
+	// a voting round, e.g. random) and stamps decided_at.
+	SetPollWinner(ctx context.Context, id, nominationID string) error
 	CodeExists(ctx context.Context, code string) (bool, error)
 
 	CreateParticipant(ctx context.Context, p *Participant) error

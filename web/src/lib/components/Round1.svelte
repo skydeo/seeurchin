@@ -12,6 +12,7 @@
 	const nominatedIds = $derived(new Set(poll.nominations.map((n) => n.item_id)));
 	const mine = $derived(poll.nominations.filter((n) => n.mine_nominated));
 	const isHost = $derived(poll.me?.is_host ?? false);
+	const isRandom = $derived(poll.voting_method === 'random');
 
 	const guidance = $derived.by(() => {
 		const r = poll.submission_rules;
@@ -143,14 +144,18 @@
 	{#if isHost}
 		<div class="mt-8 rounded-2xl bg-slate-900/70 p-4 ring-1 ring-white/10">
 			<p class="text-sm text-slate-400">
-				When everyone's done nominating, start the vote. You need at least 2 nominations.
+				{#if isRandom}
+					When everyone's done nominating, draw the winner. You need at least 2 nominations.
+				{:else}
+					When everyone's done nominating, start the vote. You need at least 2 nominations.
+				{/if}
 			</p>
 			<button
 				onclick={async () => update(await api.advance(code))}
 				disabled={poll.nominations.length < 2}
 				class="mt-3 w-full rounded-xl bg-emerald-500 px-4 py-3 font-semibold text-white hover:bg-emerald-600 disabled:opacity-40"
 			>
-				Start voting →
+				{isRandom ? '🎲 Pick the winner' : 'Start voting →'}
 			</button>
 		</div>
 	{/if}

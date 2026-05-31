@@ -206,19 +206,23 @@
 						</select>
 					</label>
 				{/if}
-				<label class="flex items-center justify-between gap-3">
-					<span class="text-slate-300">Voting for your own picks</span>
-					<select value={selfVoteMode} onchange={(e) => setSelfVote(e.currentTarget.value)} class="rounded-lg bg-slate-900 px-2 py-1.5 ring-1 ring-white/10">
-						<option value="unlimited">Allowed</option>
-						<option value="none">Not allowed</option>
-						<option value="limited">Limited…</option>
-					</select>
-				</label>
-				{#if selfVoteMode === 'limited'}
+				{#if method === 'random'}
+					<p class="text-slate-400">A random nomination is drawn as the winner — there's no voting round.</p>
+				{:else}
 					<label class="flex items-center justify-between gap-3">
-						<span class="text-slate-300">Most you can give your own picks</span>
-						<input type="number" min="1" value={num(config.max_self_votes)} oninput={(e) => (config.max_self_votes = Math.max(1, num(e.currentTarget.value)))} class="w-20 rounded-lg bg-slate-900 px-2 py-1.5 text-center ring-1 ring-white/10" />
+						<span class="text-slate-300">Voting for your own picks</span>
+						<select value={selfVoteMode} onchange={(e) => setSelfVote(e.currentTarget.value)} class="rounded-lg bg-slate-900 px-2 py-1.5 ring-1 ring-white/10">
+							<option value="unlimited">Allowed</option>
+							<option value="none">Not allowed</option>
+							<option value="limited">Limited…</option>
+						</select>
 					</label>
+					{#if selfVoteMode === 'limited'}
+						<label class="flex items-center justify-between gap-3">
+							<span class="text-slate-300">Most you can give your own picks</span>
+							<input type="number" min="1" value={num(config.max_self_votes)} oninput={(e) => (config.max_self_votes = Math.max(1, num(e.currentTarget.value)))} class="w-20 rounded-lg bg-slate-900 px-2 py-1.5 text-center ring-1 ring-white/10" />
+						</label>
+					{/if}
 				{/if}
 			</div>
 		</div>
@@ -228,10 +232,12 @@
 				<span class="text-slate-300">Allow guests (no account needed)</span>
 				<input type="checkbox" bind:checked={allowGuests} class="h-5 w-5 accent-brand-500" />
 			</label>
-			<label class="flex items-center justify-between gap-3 text-sm">
-				<span class="text-slate-300">Show live results during voting</span>
-				<input type="checkbox" bind:checked={resultsLive} class="h-5 w-5 accent-brand-500" />
-			</label>
+			{#if method !== 'random'}
+				<label class="flex items-center justify-between gap-3 text-sm">
+					<span class="text-slate-300">Show live results during voting</span>
+					<input type="checkbox" bind:checked={resultsLive} class="h-5 w-5 accent-brand-500" />
+				</label>
+			{/if}
 			<label class="flex items-center justify-between gap-3 text-sm">
 				<span class="text-slate-300">Reveal who nominated, on the results screen</span>
 				<input type="checkbox" bind:checked={revealNominators} class="h-5 w-5 accent-brand-500" />
