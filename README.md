@@ -37,6 +37,8 @@ Everything updates in real time via Server-Sent Events — no refreshing.
   library entries for the same title are collapsed automatically.
 - **Flexible self-voting** — allow, forbid, or cap how much voters may back
   their own picks; optionally reveal who nominated the winner.
+- **Write-ins via Seerr** *(optional)* — nominate titles you don't have yet by
+  searching Seerr/TMDB, and auto-request a winning write-in so it downloads.
 - **Short share codes** — ambiguity-free 6-character codes (Crockford base32,
   no `O/0/I/1/L` confusion), embedded in a tappable link.
 - **Mobile-first** — designed for passing a phone around / dropping a link in a
@@ -148,9 +150,20 @@ All configuration is via environment variables.
 | `SEEURCHIN_DB_PATH` | no | `./seeurchin.db` | SQLite file path. Use a mounted volume (the image defaults to `/config`). |
 | `SEEURCHIN_CODE_STYLE` | no | `base32` | Share-code style. Only `base32` is implemented today (`words` is planned). |
 | `SEEURCHIN_ENABLE_USER_LOGIN` | no | `false` | Reserved for Jellyfin login (not yet implemented). |
+| `SEERR_URL` | no | — | Seerr/Overseerr/Jellyseerr base URL, e.g. `http://seerr:5055`. Set with `SEERR_API_KEY` to enable write-in nominations + winner auto-request. |
+| `SEERR_API_KEY` | no | — | Seerr API key (Settings → General → API Key). Use a dedicated account whose default profile is what you want requested; grant it auto-approve to have winners download without manual approval. |
+| `SEERR_MOVIE_PROFILE_ID` / `SEERR_TV_PROFILE_ID` | no | account default | Quality profile id applied to movie / TV requests. |
+| `SEERR_MOVIE_ROOT_FOLDER` / `SEERR_TV_ROOT_FOLDER` | no | account default | Root folder for movie / TV requests. |
+| `SEERR_SERVER_ID` | no | account default | Radarr/Sonarr server id to request against. |
 
 The Docker image additionally defaults `SEEURCHIN_DB_PATH=/config/seeurchin.db`
 and declares `/config` as a volume.
+
+When `SEERR_URL` + `SEERR_API_KEY` are set, participants can nominate titles that
+aren't in your library yet (searched via Seerr/TMDB), and a winning write-in is
+auto-requested through Seerr — each per-poll toggleable. The request is made by
+the account that owns the API key, using its default (or the configured) quality
+profile; it only downloads automatically if that account is set to auto-approve.
 
 ---
 
@@ -163,16 +176,19 @@ session cookie obtained from create or join.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/health` | Liveness check. |
+| `GET` | `/api/features` | Optional capabilities, e.g. `{"seerr": true}`. |
 | `GET` | `/api/methods` | Available voting methods and their default configs. |
 | `GET` | `/api/genres?scope=` | Library genres for a scope (`movie`/`series`/`both`), for the genre picker. |
 | `POST` | `/api/polls` | Create a poll (creator becomes host). Returns the poll view + sets cookie. |
 | `GET` | `/api/polls/{code}` | Poll state, including your participation. |
 | `POST` | `/api/polls/{code}/join` | Join as a guest (`{display_name}`); sets cookie. |
 | `GET` | `/api/polls/{code}/library?q=&type=` | Search/browse the library (proxied). |
-| `POST` | `/api/polls/{code}/nominations` | Nominate a title (`{item_id}`). |
+| `GET` | `/api/polls/{code}/search-external?q=` | Search Seerr/TMDB for write-in titles (when enabled). |
+| `POST` | `/api/polls/{code}/nominations` | Nominate a library title (`{item_id}`) or a write-in (`{tmdb_id, media_type}`). |
 | `DELETE` | `/api/polls/{code}/nominations/{id}` | Withdraw your nomination. |
 | `POST` | `/api/polls/{code}/advance` | Host: advance the poll (round1 → round2 → closed). |
 | `POST` | `/api/polls/{code}/votes` | Cast/replace your ballot (`{selections}`). |
+| `POST` | `/api/polls/{code}/request/{id}` | Host: request a winning write-in via Seerr. |
 | `GET` | `/api/polls/{code}/results` | Tally (when closed, or live if enabled). |
 | `GET` | `/api/polls/{code}/events` | SSE stream of poll updates. |
 | `GET` | `/api/items/{id}/image` | Poster image proxy. |
@@ -185,13 +201,15 @@ Create-poll body:
   "host_name": "Alex",
   "library_scope": "movie",          // "movie" | "series" | "both"
   "submission_rules": { "min": 0, "max": 0, "required": 0 },
-  "voting_method": "approval",       // "approval" | "ranked" | "score"
+  "voting_method": "approval",       // "approval" | "ranked" | "score" | "random"
   "voting_config": null,             // method defaults used when null
   "allow_guests": true,
   "results_live": false,
   "reveal_nominators": false,        // show who nominated, on the results screen
   "reveal_scope": "winner",          // "winner" | "all" (when reveal_nominators)
-  "genres": []                       // restrict nominations to these genres (empty = any)
+  "genres": [],                      // restrict nominations to these genres (empty = any)
+  "allow_writeins": false,           // allow nominating titles not in the library (needs Seerr)
+  "auto_request_winner": false       // auto-request a winning write-in via Seerr on close
 }
 ```
 
@@ -255,9 +273,11 @@ internal/config      env-var configuration
 internal/jellyfin    Jellyfin client (modern auth header, search, image proxy)
 internal/store       SQLite repository (modernc.org/sqlite)
 internal/poll        domain types + service (state machine, rules)
-internal/voting      pluggable voting engine (approval, ranked, score)
+internal/voting      pluggable voting engine (approval, ranked, score, random)
 internal/codes       Crockford base32 share codes
 internal/auth        session cookies + provider seam (guest now, Jellyfin later)
+internal/jellyfin    Jellyfin client (modern auth header, search, image proxy)
+internal/seerr       Seerr client (external search, winner auto-request)
 internal/httpapi     REST + SSE handlers, embedded SPA
 web/                 SvelteKit + Tailwind frontend
 ```
@@ -270,8 +290,8 @@ web/                 SvelteKit + Tailwind frontend
   (`AuthenticateByName` + optional Quick Connect) using the modern auth header,
   with a per-poll "require login" toggle. The data model and auth seam are
   already in place.
-- **Seerr integration** — optionally auto-request the winning title if it isn't
-  already in the library.
+- **Per-round history + admin** — a management view across polls.
+- **Sudden-death runoff** and a **genre pre-round**.
 - **Word-style share codes** (`SEEURCHIN_CODE_STYLE=words`).
 - **Deadlines / auto-advance** between rounds.
 
