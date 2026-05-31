@@ -70,9 +70,9 @@ func TestCreateRequestBody(t *testing.T) {
 	defer ts.Close()
 	c := New(ts.URL, "k")
 
-	// Movie with explicit profile/root/server.
+	// Movie with explicit profile/root/server/user.
 	got, err := c.CreateRequest(context.Background(), RequestInput{
-		MediaType: "movie", TMDBID: 550, ProfileID: 4, RootFolder: "/movies", ServerID: 0,
+		MediaType: "movie", TMDBID: 550, ProfileID: 4, RootFolder: "/movies", ServerID: 0, UserID: 7,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -81,23 +81,24 @@ func TestCreateRequestBody(t *testing.T) {
 		t.Errorf("status label = %q, want pending", got.Status)
 	}
 	if gotMovie["mediaId"].(float64) != 550 || gotMovie["profileId"].(float64) != 4 ||
-		gotMovie["rootFolder"] != "/movies" || gotMovie["serverId"].(float64) != 0 {
+		gotMovie["rootFolder"] != "/movies" || gotMovie["serverId"].(float64) != 0 || gotMovie["userId"].(float64) != 7 {
 		t.Errorf("movie body wrong: %+v", gotMovie)
 	}
 	if _, ok := gotMovie["seasons"]; ok {
 		t.Errorf("movie request should not carry seasons: %+v", gotMovie)
 	}
 
-	// TV with omitted optional fields requests all seasons and omits profile/root/server.
+	// TV with omitted optional fields requests all seasons and omits
+	// profile/root/server/user.
 	if _, err := c.CreateRequest(context.Background(), RequestInput{
-		MediaType: "tv", TMDBID: 1399, ProfileID: -1, ServerID: -1,
+		MediaType: "tv", TMDBID: 1399, ProfileID: -1, ServerID: -1, UserID: -1,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if gotTV["seasons"] != "all" {
 		t.Errorf("tv request should request all seasons: %+v", gotTV)
 	}
-	for _, k := range []string{"profileId", "rootFolder", "serverId"} {
+	for _, k := range []string{"profileId", "rootFolder", "serverId", "userId"} {
 		if _, ok := gotTV[k]; ok {
 			t.Errorf("unset %q should be omitted: %+v", k, gotTV)
 		}

@@ -123,6 +123,7 @@ type RequestInput struct {
 	ProfileID  int
 	RootFolder string
 	ServerID   int
+	UserID     int // attribute the request to this Seerr user; <0 = API key owner
 }
 
 // RequestResult is the outcome of creating a request.
@@ -144,6 +145,9 @@ func (c *Client) CreateRequest(ctx context.Context, in RequestInput) (RequestRes
 	}
 	if in.ServerID >= 0 {
 		body["serverId"] = in.ServerID
+	}
+	if in.UserID >= 0 {
+		body["userId"] = in.UserID
 	}
 	var out struct {
 		Status int `json:"status"`

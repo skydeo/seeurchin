@@ -455,6 +455,7 @@ func (s *Server) requestWriteIn(ctx context.Context, p *poll.Poll, n *poll.Nomin
 		MediaType: n.Snapshot.MediaType,
 		TMDBID:    n.Snapshot.TMDBID,
 		ServerID:  s.cfg.Seerr.ServerID,
+		UserID:    s.cfg.Seerr.RequestUserID,
 	}
 	if n.Snapshot.MediaType == "tv" {
 		in.ProfileID, in.RootFolder = s.cfg.Seerr.TVProfileID, s.cfg.Seerr.TVRootFolder

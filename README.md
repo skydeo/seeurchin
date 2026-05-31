@@ -152,6 +152,7 @@ All configuration is via environment variables.
 | `SEEURCHIN_ENABLE_USER_LOGIN` | no | `false` | Reserved for Jellyfin login (not yet implemented). |
 | `SEERR_URL` | no | — | Seerr/Overseerr/Jellyseerr base URL, e.g. `http://seerr:5055`. Set with `SEERR_API_KEY` to enable write-in nominations + winner auto-request. |
 | `SEERR_API_KEY` | no | — | Seerr API key (Settings → General → API Key). Use a dedicated account whose default profile is what you want requested; grant it auto-approve to have winners download without manual approval. |
+| `SEERR_USER_ID` | no | API key owner | Seerr user id to attribute requests to (e.g. a dedicated "movie night" account), using that user's defaults. |
 | `SEERR_MOVIE_PROFILE_ID` / `SEERR_TV_PROFILE_ID` | no | account default | Quality profile id applied to movie / TV requests. |
 | `SEERR_MOVIE_ROOT_FOLDER` / `SEERR_TV_ROOT_FOLDER` | no | account default | Root folder for movie / TV requests. |
 | `SEERR_SERVER_ID` | no | account default | Radarr/Sonarr server id to request against. |

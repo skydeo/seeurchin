@@ -317,7 +317,7 @@ func TestWriteInAndAutoRequest(t *testing.T) {
 	defer seerrMock.Close()
 
 	sr := seerr.New(seerrMock.URL, "k")
-	ts := newTestServerWithSeerr(t, config.SeerrConfig{URL: seerrMock.URL, APIKey: "k", MovieProfileID: -1, TVProfileID: -1, ServerID: -1}, sr)
+	ts := newTestServerWithSeerr(t, config.SeerrConfig{URL: seerrMock.URL, APIKey: "k", MovieProfileID: -1, TVProfileID: -1, ServerID: -1, RequestUserID: -1}, sr)
 	host := newClient(t)
 
 	var created pollView

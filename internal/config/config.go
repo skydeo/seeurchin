@@ -61,6 +61,9 @@ type SeerrConfig struct {
 	MovieRootFolder string
 	TVRootFolder    string
 	ServerID        int
+	// RequestUserID attributes requests to a specific Seerr user (the dedicated
+	// "movie night" account), using that user's defaults. -1 = the API key owner.
+	RequestUserID int
 }
 
 // Enabled reports whether Seerr is configured (URL + API key present).
@@ -87,6 +90,7 @@ func FromEnv() (Config, error) {
 			MovieRootFolder: strings.TrimSpace(os.Getenv("SEERR_MOVIE_ROOT_FOLDER")),
 			TVRootFolder:    strings.TrimSpace(os.Getenv("SEERR_TV_ROOT_FOLDER")),
 			ServerID:        envInt("SEERR_SERVER_ID", -1),
+			RequestUserID:   envInt("SEERR_USER_ID", -1),
 		},
 	}
 
