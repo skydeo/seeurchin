@@ -1,0 +1,34 @@
+# Local test: run seeurchin attached to the already-running skydeo.xyz stack
+# network, so it reaches Jellyfin at http://jellyfin:8096 — the same URL it will
+# use in production. Requires the main stack (and its network) to be up.
+#
+# Usage:
+#   export JELLYFIN_API_KEY=...                       # Jellyfin Dashboard -> API Keys
+#   export SEEURCHIN_SESSION_SECRET=$(openssl rand -hex 32)
+#   docker compose -f docker-compose.stack.yml up --build
+#
+# Then open http://localhost:5858. Ctrl-C to stop; `... down` to remove.
+services:
+  seeurchin:
+    build: .
+    image: seeurchin:latest
+    container_name: seeurchin
+    environment:
+      - TZ=America/Chicago
+      - JELLYFIN_URL=${JELLYFIN_URL:-http://jellyfin:8096}
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:?set JELLYFIN_API_KEY}
+      - SEEURCHIN_BASE_URL=${SEEURCHIN_BASE_URL:-http://localhost:5858}
+      - SEEURCHIN_SESSION_SECRET=${SEEURCHIN_SESSION_SECRET:?set a random session secret}
+    volumes:
+      - ./config/seeurchin:/config
+    ports:
+      - "5858:5858"
+    networks:
+      - media-network
+    restart: unless-stopped
+
+networks:
+  # Attach to the network the live skydeo.xyz stack already created.
+  media-network:
+    external: true
+    name: skydeoxyz_media-network
