@@ -144,7 +144,7 @@
 
 {#if browseOpen}
 	<div class="fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur">
-		<div class="mx-auto flex w-full max-w-3xl flex-1 flex-col p-4">
+		<div class="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col p-4">
 			<div class="flex items-center gap-3">
 				<input
 					bind:value={query}
@@ -166,7 +166,7 @@
 				</div>
 			{/if}
 
-			<div class="mt-4 flex-1 overflow-y-auto">
+			<div class="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain">
 				{#if searching}
 					<p class="py-10 text-center text-slate-400">Searching…</p>
 				{:else if searchError}

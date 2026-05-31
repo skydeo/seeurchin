@@ -5,6 +5,13 @@
 
 	let copied = $state(false);
 
+	// Derive the share link from the origin the app was actually loaded from, so
+	// it's correct regardless of SEEURCHIN_BASE_URL (localhost, LAN IP, or the
+	// public tunnel hostname all just work). Falls back to the server value.
+	const shareUrl = $derived(
+		typeof window !== 'undefined' ? `${window.location.origin}/p/${poll.code}` : poll.share_url
+	);
+
 	const statusLabel: Record<string, string> = {
 		draft: 'Draft',
 		round1: 'Nominating',
@@ -20,11 +27,27 @@
 
 	async function copyLink() {
 		try {
-			await navigator.clipboard.writeText(poll.share_url);
+			if (navigator.clipboard && window.isSecureContext) {
+				await navigator.clipboard.writeText(shareUrl);
+			} else {
+				// Clipboard API is unavailable on insecure origins (e.g. a LAN IP
+				// over http). Fall back to a temporary textarea + execCommand.
+				const ta = document.createElement('textarea');
+				ta.value = shareUrl;
+				ta.style.position = 'fixed';
+				ta.style.top = '0';
+				ta.style.opacity = '0';
+				document.body.appendChild(ta);
+				ta.focus();
+				ta.select();
+				document.execCommand('copy');
+				ta.remove();
+			}
 			copied = true;
 			setTimeout(() => (copied = false), 1500);
 		} catch {
-			// ignore clipboard failures (e.g. insecure context)
+			// Last resort: show the link so it can be copied by hand.
+			window.prompt('Copy this link:', shareUrl);
 		}
 	}
 </script>
