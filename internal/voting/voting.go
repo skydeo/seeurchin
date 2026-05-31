@@ -1,0 +1,127 @@
+// Package voting implements seeurchin's pluggable round-2 voting engine.
+//
+// Each voting method satisfies the Method interface and is registered in a
+// global registry, so adding a new (or custom) method is a single Register
+// call. A poll stores its chosen method key plus an opaque JSON config blob
+// that the method interprets.
+package voting
+
+import (
+	"encoding/json"
+	"sort"
+)
+
+// Ballot is one participant's submission, interpreted per method. Selections
+// maps a nomination ID to an integer whose meaning depends on the method:
+//
+//	approval: votes placed on that nomination (>= 1)
+//	score:    the score given to that nomination (0..MaxScore)
+//	ranked:   the 1-based rank position (1 = top choice)
+type Ballot struct {
+	ParticipantID string
+	Selections    map[string]int
+}
+
+// Result is the tally outcome for a single nomination.
+type Result struct {
+	NominationID string  `json:"nomination_id"`
+	Score        float64 `json:"score"`
+	Detail       string  `json:"detail,omitempty"`
+}
+
+// RoundResult records one elimination round (ranked-choice only).
+type RoundResult struct {
+	Round      int                `json:"round"`
+	Counts     map[string]float64 `json:"counts"`
+	Eliminated []string           `json:"eliminated,omitempty"`
+}
+
+// Results is a complete tally, with Ranked sorted best-first and WinnerIDs
+// holding one or more IDs (more than one only on a tie).
+type Results struct {
+	Method    string        `json:"method"`
+	Ranked    []Result      `json:"ranked"`
+	WinnerIDs []string      `json:"winner_ids"`
+	Rounds    []RoundResult `json:"rounds,omitempty"`
+}
+
+// Method is a pluggable voting strategy.
+type Method interface {
+	// Key is the stable identifier stored on the poll, e.g. "approval".
+	Key() string
+	// Label is a human-friendly name for the UI.
+	Label() string
+	// DefaultConfig returns the method's default configuration as JSON.
+	DefaultConfig() json.RawMessage
+	// ValidateConfig checks a host-provided configuration blob.
+	ValidateConfig(raw json.RawMessage) error
+	// ValidateBallot checks a participant's ballot against the config. allIDs
+	// is the full candidate set; ownIDs are nominations the voter submitted
+	// (used to enforce the self-vote rule).
+	ValidateBallot(raw json.RawMessage, b Ballot, allIDs, ownIDs []string) error
+	// Tally computes results from every ballot.
+	Tally(raw json.RawMessage, allIDs []string, ballots []Ballot) (Results, error)
+}
+
+var registry = map[string]Method{}
+
+// Register adds a method to the registry, replacing any existing one with the
+// same key.
+func Register(m Method) { registry[m.Key()] = m }
+
+// Get returns the method for key, if registered.
+func Get(key string) (Method, bool) {
+	m, ok := registry[key]
+	return m, ok
+}
+
+// All returns every registered method sorted by key.
+func All() []Method {
+	out := make([]Method, 0, len(registry))
+	for _, m := range registry {
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key() < out[j].Key() })
+	return out
+}
+
+func init() {
+	Register(Approval{})
+	Register(Ranked{})
+	Register(Score{})
+}
+
+// toSet builds a lookup set from a slice of IDs.
+func toSet(ids []string) map[string]bool {
+	s := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		s[id] = true
+	}
+	return s
+}
+
+// rankByScore turns a score map into a best-first Result slice and the set of
+// winner IDs (all sharing the top, strictly-positive score). A top score of 0
+// (nobody voted) yields no winners.
+func rankByScore(scores map[string]float64, allIDs []string) ([]Result, []string) {
+	results := make([]Result, 0, len(allIDs))
+	for _, id := range allIDs {
+		results = append(results, Result{NominationID: id, Score: scores[id]})
+	}
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Score != results[j].Score {
+			return results[i].Score > results[j].Score
+		}
+		return results[i].NominationID < results[j].NominationID
+	})
+	var winners []string
+	if len(results) > 0 && results[0].Score > 0 {
+		top := results[0].Score
+		for _, r := range results {
+			if r.Score == top {
+				winners = append(winners, r.NominationID)
+			}
+		}
+	}
+	return results, winners
+}
