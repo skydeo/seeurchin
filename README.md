@@ -1,84 +1,194 @@
 # seeurchin 🌊🦔
 
-A self-hosted group movie/show picker for [Jellyfin](https://jellyfin.org/). Drop a
-link in a group chat and let everyone collectively choose what to watch through a
-two-round poll:
+A self-hosted, group movie/show picker for [Jellyfin](https://jellyfin.org/).
+Drop a link in a group chat and let everyone collectively decide what to watch
+through a two-round poll — nominate titles straight from your own library, then
+vote. Mobile-first, no accounts required, runs as a single small container
+alongside your existing Jellyfin stack.
 
-1. **Round 1 — Submissions.** Participants browse/search your Jellyfin library and
-   nominate titles, subject to host-defined controls (min / max / required count).
-2. **Round 2 — Voting.** Everyone votes on the nominated set using a configurable
-   voting method (approval, ranked-choice, or score).
+---
 
-Mobile-first, joinable via a short share code, supports guest users (no account
-needed), and runs as a single container alongside your existing Jellyfin stack.
+## How it works
 
-## Status
+1. **Create a poll.** Pick the library scope (movies, shows, or both), a voting
+   method, and optional nomination rules (min / max / required per person). You
+   get a short share code and a link.
+2. **Round 1 — Nominate.** Participants open the link, join with a display name,
+   browse or search your Jellyfin library, and nominate titles. Duplicate
+   nominations are merged and show how many people picked them.
+3. **Round 2 — Vote.** The host starts voting and everyone casts a ballot using
+   the poll's voting method. Ballots are editable until the round closes.
+4. **Results.** The host closes the poll and the winner is revealed. Results can
+   optionally update live during voting.
 
-Early development. See the implementation plan for the roadmap. MVP scope:
-anonymous/guest identity, all three voting methods, live updates, Dockerized.
-Jellyfin user login (modern auth) and Seerr integration are planned follow-ups.
+Everything updates in real time via Server-Sent Events — no refreshing.
 
-## Stack
+## Features
 
-- **Backend:** Go (`chi`, pure-Go SQLite via `modernc.org/sqlite`), embedded frontend.
-- **Frontend:** SvelteKit (static) + Tailwind CSS.
-- **Live updates:** Server-Sent Events.
+- **Two-round flow** — nominate, then vote, with host-defined controls.
+- **Three voting methods**, chosen per poll (see below), built on a pluggable
+  engine so new methods are a single registration.
+- **Guest-friendly** — participants just enter a display name; no Jellyfin
+  account needed. (Built behind an auth seam so Jellyfin login can be added.)
+- **Browse your real library** — poster-grid search, scoped to movies/shows.
+  Posters are proxied through the backend, so the browser never sees your
+  Jellyfin URL or API key. Duplicate library entries for the same title are
+  collapsed automatically.
+- **Short share codes** — ambiguity-free 6-character codes (Crockford base32,
+  no `O/0/I/1/L` confusion), embedded in a tappable link.
+- **Mobile-first** — designed for passing a phone around / dropping a link in a
+  chat.
+- **Live updates** — counts, nominations, and results stream over SSE.
+- **Tiny footprint** — a single ~13 MB distroless image; pure-Go SQLite, no
+  external database.
+- **Modern Jellyfin auth** — uses the `Authorization: MediaBrowser` header, not
+  the legacy schemes Jellyfin removes in 10.13.
 
-## Configuration
+## Voting methods
 
-Configured entirely via environment variables:
-
-| Variable | Required | Default | Description |
+| Method | Label in UI | Config keys (defaults) | How the winner is decided |
 |---|---|---|---|
-| `JELLYFIN_URL` | yes | — | Jellyfin base URL, e.g. `http://jellyfin:8096` |
-| `JELLYFIN_API_KEY` | yes | — | API key (Dashboard → API Keys) for library reads |
-| `SEEURCHIN_BASE_URL` | no | `http://localhost:5858` | Public origin for share links |
-| `SEEURCHIN_ADDR` | no | `:5858` | Listen address |
-| `SEEURCHIN_DB_PATH` | no | `./seeurchin.db` | SQLite file path |
-| `SEEURCHIN_SESSION_SECRET` | recommended | random | HMAC secret for session cookies |
-| `SEEURCHIN_CODE_STYLE` | no | `base32` | Share-code style |
-| `SEEURCHIN_ENABLE_USER_LOGIN` | no | `false` | Enable Jellyfin login (Phase 2) |
+| **Approval** | Approval / N votes | `votes_per_user` (3), `max_votes_per_option` (1, `0` = unlimited), `allow_self_vote` (true) | Highest total weight across all ballots. With `max_votes_per_option: 1` this is plain approval voting. |
+| **Ranked** | Ranked-choice (IRV) | `allow_self_vote` (true), `max_ranked` (0 = no limit) | Instant-runoff: eliminate the lowest first choice and redistribute until a title has a majority. |
+| **Score** | Star / score rating | `max_score` (5), `aggregate` (`total`; or `average`), `allow_self_vote` (true) | Rate each title `0..max_score`; ranked by total (or average) score. |
+
+Each method enforces its own ballot rules server-side (vote budgets, per-option
+caps, and whether you may vote for a title you nominated). Nomination rules
+(`min` / `max` / `required`) are enforced independently of the voting method.
+
+---
 
 ## Quick start (Docker)
 
+Run it standalone, pointed at any reachable Jellyfin server:
+
 ```sh
-export JELLYFIN_API_KEY=...          # Jellyfin Dashboard → API Keys
+export JELLYFIN_URL=http://your-jellyfin:8096
+export JELLYFIN_API_KEY=...                      # Jellyfin Dashboard → API Keys
 export SEEURCHIN_SESSION_SECRET=$(openssl rand -hex 32)
 export SEEURCHIN_BASE_URL=http://localhost:5858
 docker compose up --build
 ```
 
-Then open <http://localhost:5858>. The image is ~13 MB (distroless + a static Go
-binary with the frontend embedded).
+Open <http://localhost:5858>.
 
-### Adding it to an existing Jellyfin stack
+> **Getting a Jellyfin API key:** in Jellyfin, go to **Dashboard → API Keys →
+> +**, name it `seeurchin`, and copy the key. This key is used only for reading
+> the library; it's never exposed to the browser.
 
-Drop this service into your stack's `docker-compose.yml`, on the same network as
-Jellyfin, and route a hostname to it through your reverse proxy / Cloudflare tunnel
-(then you can drop the `ports` mapping):
+## Adding it to an existing Jellyfin stack
+
+Add a service to your stack's `docker-compose.yml`, on the same Docker network
+as Jellyfin so it can reach it by service name, and route a hostname to it
+through your reverse proxy / Cloudflare tunnel:
 
 ```yaml
   seeurchin:
-    image: seeurchin:latest      # or: build: ./seeurchin
+    image: seeurchin:latest          # or: build: ./seeurchin
     container_name: seeurchin
+    init: true
     environment:
       - TZ=America/Chicago
       - JELLYFIN_URL=http://jellyfin:8096
       - JELLYFIN_API_KEY=<dashboard API key>
-      - SEEURCHIN_BASE_URL=https://seeurchin.example.com
-      - SEEURCHIN_SESSION_SECRET=<random 32+ bytes>
+      - SEEURCHIN_BASE_URL=https://vote.example.com   # your public tunnel hostname
+      - SEEURCHIN_SESSION_SECRET=<openssl rand -hex 32>
     volumes:
       - ./config/seeurchin:/config
     ports:
-      - "5858:5858"
+      - "5858:5858"                  # optional; the tunnel can reach it over the internal network
     networks:
       - media-network
+    depends_on:
+      - jellyfin
     restart: unless-stopped
 ```
 
+Then add a public-hostname route in your tunnel (e.g. `vote.example.com` →
+`http://seeurchin:5858`). Because `SEEURCHIN_BASE_URL` is set to the public
+hostname — and copied share links are derived from whatever origin you open the
+app at — links shared from the browser just work.
+
+### Testing against a running stack
+
+`docker-compose.stack.yml` runs seeurchin attached to an already-running stack's
+network (it references the external network created by your main compose
+project), so it talks to Jellyfin at the same internal URL it will use in
+production:
+
+```sh
+export JELLYFIN_API_KEY=...
+export SEEURCHIN_SESSION_SECRET=$(openssl rand -hex 32)
+docker compose -f docker-compose.stack.yml up --build
+```
+
+Adjust the `name:` under `networks.media-network` to match your stack's network
+(`docker network ls`).
+
+---
+
+## Configuration
+
+All configuration is via environment variables.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `JELLYFIN_URL` | **yes** | — | Jellyfin base URL, e.g. `http://jellyfin:8096`. |
+| `JELLYFIN_API_KEY` | **yes** | — | API key (Dashboard → API Keys) for library reads. |
+| `SEEURCHIN_BASE_URL` | recommended | `http://localhost:5858` | Public origin used to build shareable links. Set to your tunnel hostname in production. |
+| `SEEURCHIN_SESSION_SECRET` | recommended | random | HMAC secret for session cookies. A hex string (≥16 bytes) is decoded; anything else is used verbatim. If unset, a random secret is generated and **sessions won't survive a restart**. |
+| `SEEURCHIN_ADDR` | no | `:5858` | TCP listen address. |
+| `SEEURCHIN_DB_PATH` | no | `./seeurchin.db` | SQLite file path. Use a mounted volume (the image defaults to `/config`). |
+| `SEEURCHIN_CODE_STYLE` | no | `base32` | Share-code style. Only `base32` is implemented today (`words` is planned). |
+| `SEEURCHIN_ENABLE_USER_LOGIN` | no | `false` | Reserved for Jellyfin login (not yet implemented). |
+
+The Docker image additionally defaults `SEEURCHIN_DB_PATH=/config/seeurchin.db`
+and declares `/config` as a volume.
+
+---
+
+## API
+
+The frontend is a single-page app served from the same origin as the API (so no
+CORS). All poll endpoints are scoped by share `code`; mutations require a
+session cookie obtained from create or join.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/health` | Liveness check. |
+| `GET` | `/api/methods` | Available voting methods and their default configs. |
+| `POST` | `/api/polls` | Create a poll (creator becomes host). Returns the poll view + sets cookie. |
+| `GET` | `/api/polls/{code}` | Poll state, including your participation. |
+| `POST` | `/api/polls/{code}/join` | Join as a guest (`{display_name}`); sets cookie. |
+| `GET` | `/api/polls/{code}/library?q=&type=` | Search/browse the library (proxied). |
+| `POST` | `/api/polls/{code}/nominations` | Nominate a title (`{item_id}`). |
+| `DELETE` | `/api/polls/{code}/nominations/{id}` | Withdraw your nomination. |
+| `POST` | `/api/polls/{code}/advance` | Host: advance the poll (round1 → round2 → closed). |
+| `POST` | `/api/polls/{code}/votes` | Cast/replace your ballot (`{selections}`). |
+| `GET` | `/api/polls/{code}/results` | Tally (when closed, or live if enabled). |
+| `GET` | `/api/polls/{code}/events` | SSE stream of poll updates. |
+| `GET` | `/api/items/{id}/image` | Poster image proxy. |
+
+Create-poll body:
+
+```json
+{
+  "title": "Movie Night",
+  "host_name": "Alex",
+  "library_scope": "movie",          // "movie" | "series" | "both"
+  "submission_rules": { "min": 0, "max": 0, "required": 0 },
+  "voting_method": "approval",       // "approval" | "ranked" | "score"
+  "voting_config": null,             // method defaults used when null
+  "allow_guests": true,
+  "results_live": false
+}
+```
+
+---
+
 ## Development
 
-Backend (serves API on :5859 here; the frontend dev server proxies `/api` to it):
+Backend (run the API on `:5859`; the frontend dev server proxies `/api` to it):
 
 ```sh
 go test ./...                                   # backend tests
@@ -88,7 +198,7 @@ SEEURCHIN_ADDR=:5859 \
 go run ./cmd/seeurchin
 ```
 
-Frontend (hot-reloading dev server on :5173):
+Frontend (hot-reloading dev server on `:5173`):
 
 ```sh
 cd web
@@ -98,7 +208,7 @@ npm run dev
 
 ## Build
 
-The frontend compiles to static files embedded in the Go binary:
+The frontend compiles to static files that are embedded into the Go binary:
 
 ```sh
 npm --prefix web ci
@@ -106,7 +216,27 @@ npm --prefix web run build        # writes internal/httpapi/webdist/
 CGO_ENABLED=0 go build -o seeurchin ./cmd/seeurchin
 ```
 
-## Project layout
+Or just build the container (multi-stage: Node build → Go build → distroless):
+
+```sh
+docker build -t seeurchin:latest .
+```
+
+---
+
+## Architecture
+
+- **Backend:** Go — [`chi`](https://github.com/go-chi/chi) router, pure-Go
+  SQLite via [`modernc.org/sqlite`](https://pkg.go.dev/modernc.org/sqlite) (no
+  CGO), and the built frontend embedded with `embed.FS`.
+- **Frontend:** SvelteKit (Svelte 5, static adapter, SPA) + Tailwind CSS v4.
+- **Live updates:** Server-Sent Events via an in-memory hub keyed by poll.
+- **Sessions:** HMAC-signed, HTTP-only cookie holding a per-poll token map.
+- **Identity:** guest provider now, behind an `auth.Provider` seam; participants
+  already carry a nullable `jellyfin_user_id` so Jellyfin login can be added
+  without a schema migration.
+
+### Project layout
 
 ```
 cmd/seeurchin        entrypoint + Jellyfin→domain adapter
@@ -120,3 +250,21 @@ internal/auth        session cookies + provider seam (guest now, Jellyfin later)
 internal/httpapi     REST + SSE handlers, embedded SPA
 web/                 SvelteKit + Tailwind frontend
 ```
+
+---
+
+## Roadmap
+
+- **Jellyfin login** — authenticate participants against Jellyfin
+  (`AuthenticateByName` + optional Quick Connect) using the modern auth header,
+  with a per-poll "require login" toggle. The data model and auth seam are
+  already in place.
+- **Seerr integration** — optionally auto-request the winning title if it isn't
+  already in the library.
+- **Word-style share codes** (`SEEURCHIN_CODE_STYLE=words`).
+- **Deadlines / auto-advance** between rounds.
+
+## Status
+
+**v1.0.0** — the two-round flow, all three voting methods, guest identity, live
+updates, library browsing, and Docker packaging are complete and in use.
