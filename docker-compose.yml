@@ -1,0 +1,25 @@
+# Standalone example for running seeurchin. To add it to an existing Jellyfin
+# stack instead, drop the `seeurchin` service into that compose file, attach it
+# to the same network as Jellyfin, and expose it via your reverse proxy / tunnel
+# (drop the `ports` mapping if the tunnel reaches it over the internal network).
+services:
+  seeurchin:
+    build: .
+    image: seeurchin:latest
+    container_name: seeurchin
+    environment:
+      - TZ=America/Chicago
+      # Reachable Jellyfin URL (use the service name on a shared docker network).
+      - JELLYFIN_URL=${JELLYFIN_URL:-http://jellyfin:8096}
+      # Jellyfin Dashboard -> API Keys.
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:?set JELLYFIN_API_KEY}
+      # Public origin used to build shareable links.
+      - SEEURCHIN_BASE_URL=${SEEURCHIN_BASE_URL:-http://localhost:5858}
+      # Stable random secret so sessions survive restarts (e.g. `openssl rand -hex 32`).
+      - SEEURCHIN_SESSION_SECRET=${SEEURCHIN_SESSION_SECRET:?set a random session secret}
+      # - SEEURCHIN_CODE_STYLE=base32
+    volumes:
+      - ./config/seeurchin:/config
+    ports:
+      - "5858:5858"
+    restart: unless-stopped

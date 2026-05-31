@@ -39,9 +39,84 @@ Configured entirely via environment variables:
 | `SEEURCHIN_CODE_STYLE` | no | `base32` | Share-code style |
 | `SEEURCHIN_ENABLE_USER_LOGIN` | no | `false` | Enable Jellyfin login (Phase 2) |
 
-## Development
+## Quick start (Docker)
 
 ```sh
-go test ./...        # backend tests
+export JELLYFIN_API_KEY=...          # Jellyfin Dashboard → API Keys
+export SEEURCHIN_SESSION_SECRET=$(openssl rand -hex 32)
+export SEEURCHIN_BASE_URL=http://localhost:5858
+docker compose up --build
+```
+
+Then open <http://localhost:5858>. The image is ~13 MB (distroless + a static Go
+binary with the frontend embedded).
+
+### Adding it to an existing Jellyfin stack
+
+Drop this service into your stack's `docker-compose.yml`, on the same network as
+Jellyfin, and route a hostname to it through your reverse proxy / Cloudflare tunnel
+(then you can drop the `ports` mapping):
+
+```yaml
+  seeurchin:
+    image: seeurchin:latest      # or: build: ./seeurchin
+    container_name: seeurchin
+    environment:
+      - TZ=America/Chicago
+      - JELLYFIN_URL=http://jellyfin:8096
+      - JELLYFIN_API_KEY=<dashboard API key>
+      - SEEURCHIN_BASE_URL=https://seeurchin.example.com
+      - SEEURCHIN_SESSION_SECRET=<random 32+ bytes>
+    volumes:
+      - ./config/seeurchin:/config
+    ports:
+      - "5858:5858"
+    networks:
+      - media-network
+    restart: unless-stopped
+```
+
+## Development
+
+Backend (serves API on :5859 here; the frontend dev server proxies `/api` to it):
+
+```sh
+go test ./...                                   # backend tests
+JELLYFIN_URL=http://localhost:8096 \
+JELLYFIN_API_KEY=... \
+SEEURCHIN_ADDR=:5859 \
 go run ./cmd/seeurchin
+```
+
+Frontend (hot-reloading dev server on :5173):
+
+```sh
+cd web
+npm install
+npm run dev
+```
+
+## Build
+
+The frontend compiles to static files embedded in the Go binary:
+
+```sh
+npm --prefix web ci
+npm --prefix web run build        # writes internal/httpapi/webdist/
+CGO_ENABLED=0 go build -o seeurchin ./cmd/seeurchin
+```
+
+## Project layout
+
+```
+cmd/seeurchin        entrypoint + Jellyfin→domain adapter
+internal/config      env-var configuration
+internal/jellyfin    Jellyfin client (modern auth header, search, image proxy)
+internal/store       SQLite repository (modernc.org/sqlite)
+internal/poll        domain types + service (state machine, rules)
+internal/voting      pluggable voting engine (approval, ranked, score)
+internal/codes       Crockford base32 share codes
+internal/auth        session cookies + provider seam (guest now, Jellyfin later)
+internal/httpapi     REST + SSE handlers, embedded SPA
+web/                 SvelteKit + Tailwind frontend
 ```

@@ -1,0 +1,22 @@
+.git
+.gitignore
+README.md
+docker-compose.yml
+
+# Node / frontend
+web/node_modules
+web/.svelte-kit
+web/build
+
+# Frontend build output is produced fresh by the frontend stage.
+internal/httpapi/webdist
+
+# Local data / config / artifacts
+*.db
+*.db-shm
+*.db-wal
+config/
+tmp/
+dist/
+/seeurchin
+.DS_Store
