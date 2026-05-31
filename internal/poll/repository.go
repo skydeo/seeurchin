@@ -1,0 +1,36 @@
+package poll
+
+import "context"
+
+// Repository is the persistence contract for the poll domain. The sqlite
+// implementation lives in internal/store.
+type Repository interface {
+	// CreatePoll inserts a poll together with its host participant atomically,
+	// setting p.HostParticipantID to host.ID.
+	CreatePoll(ctx context.Context, p *Poll, host *Participant) error
+	GetPollByCode(ctx context.Context, code string) (*Poll, error)
+	GetPollByID(ctx context.Context, id string) (*Poll, error)
+	UpdatePollStatus(ctx context.Context, id string, status Status) error
+	CodeExists(ctx context.Context, code string) (bool, error)
+
+	CreateParticipant(ctx context.Context, p *Participant) error
+	GetParticipant(ctx context.Context, id string) (*Participant, error)
+	GetParticipantBySession(ctx context.Context, pollID, sessionToken string) (*Participant, error)
+	ListParticipants(ctx context.Context, pollID string) ([]Participant, error)
+
+	// AddNomination records nominatorID's nomination of an item. If the item is
+	// already nominated in the poll it adds the nominator to the existing
+	// nomination; otherwise it creates one. The effective nomination is returned.
+	AddNomination(ctx context.Context, n *Nomination, nominatorID string) (*Nomination, error)
+	// WithdrawNomination removes participantID as a nominator; if none remain the
+	// nomination is deleted.
+	WithdrawNomination(ctx context.Context, pollID, nominationID, participantID string) error
+	ListNominations(ctx context.Context, pollID string) ([]Nomination, error)
+	CountNominationsByParticipant(ctx context.Context, pollID, participantID string) (int, error)
+
+	// ReplaceVotes atomically replaces all of participantID's votes in the poll.
+	ReplaceVotes(ctx context.Context, pollID, participantID string, votes []Vote) error
+	ListVotes(ctx context.Context, pollID string) ([]Vote, error)
+	CountVoters(ctx context.Context, pollID string) (int, error)
+	HasVoted(ctx context.Context, pollID, participantID string) (bool, error)
+}

@@ -1,0 +1,503 @@
+// Package store is the SQLite-backed implementation of poll.Repository, using
+// the pure-Go modernc.org/sqlite driver (no CGO).
+package store
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/url"
+	"time"
+
+	_ "modernc.org/sqlite"
+
+	"github.com/enderu/seeurchin/internal/poll"
+)
+
+// Store persists the poll domain in SQLite.
+type Store struct {
+	db *sql.DB
+}
+
+// Open opens (creating if needed) the SQLite database at path and applies the
+// schema. Sensible pragmas are enabled: WAL, foreign keys, and a busy timeout.
+func Open(path string) (*Store, error) {
+	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", url.PathEscape(path))
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	// modernc.org/sqlite is not safe for arbitrary concurrent writers on one
+	// connection; a single open connection keeps writes serialized.
+	db.SetMaxOpenConns(1)
+	s := &Store{db: db}
+	if err := s.migrate(context.Background()); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+// Close closes the underlying database.
+func (s *Store) Close() error { return s.db.Close() }
+
+const schema = `
+CREATE TABLE IF NOT EXISTS polls (
+  id                  TEXT PRIMARY KEY,
+  code                TEXT NOT NULL UNIQUE,
+  title               TEXT NOT NULL,
+  host_participant_id TEXT NOT NULL DEFAULT '',
+  library_scope       TEXT NOT NULL,
+  status              TEXT NOT NULL,
+  submission_rules    TEXT NOT NULL,
+  voting_method       TEXT NOT NULL,
+  voting_config       TEXT NOT NULL,
+  allow_guests        INTEGER NOT NULL DEFAULT 1,
+  results_live        INTEGER NOT NULL DEFAULT 0,
+  created_at          TEXT NOT NULL,
+  round1_closes_at    TEXT,
+  round2_closes_at    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS participants (
+  id               TEXT PRIMARY KEY,
+  poll_id          TEXT NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+  display_name     TEXT NOT NULL,
+  session_token    TEXT NOT NULL,
+  jellyfin_user_id TEXT NOT NULL DEFAULT '',
+  role             TEXT NOT NULL DEFAULT 'participant',
+  created_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_participants_session ON participants(poll_id, session_token);
+
+CREATE TABLE IF NOT EXISTS nominations (
+  id               TEXT PRIMARY KEY,
+  poll_id          TEXT NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+  jellyfin_item_id TEXT NOT NULL,
+  snapshot         TEXT NOT NULL,
+  created_at       TEXT NOT NULL,
+  UNIQUE(poll_id, jellyfin_item_id)
+);
+
+CREATE TABLE IF NOT EXISTS nomination_nominators (
+  nomination_id  TEXT NOT NULL REFERENCES nominations(id) ON DELETE CASCADE,
+  participant_id TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+  created_at     TEXT NOT NULL,
+  PRIMARY KEY (nomination_id, participant_id)
+);
+
+CREATE TABLE IF NOT EXISTS votes (
+  id             TEXT PRIMARY KEY,
+  poll_id        TEXT NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+  participant_id TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+  nomination_id  TEXT NOT NULL REFERENCES nominations(id) ON DELETE CASCADE,
+  value          INTEGER NOT NULL,
+  created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_votes_participant ON votes(poll_id, participant_id);
+`
+
+func (s *Store) migrate(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, schema)
+	return err
+}
+
+// --- time helpers ---
+
+func nowText() string { return time.Now().UTC().Format(time.RFC3339Nano) }
+
+func timeText(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return t.UTC().Format(time.RFC3339Nano)
+}
+
+func parseTime(s string) time.Time {
+	t, _ := time.Parse(time.RFC3339Nano, s)
+	return t
+}
+
+func parseNullTime(ns sql.NullString) *time.Time {
+	if !ns.Valid || ns.String == "" {
+		return nil
+	}
+	t := parseTime(ns.String)
+	return &t
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// --- polls ---
+
+func (s *Store) CreatePoll(ctx context.Context, p *poll.Poll, host *poll.Participant) error {
+	rules, err := json.Marshal(p.SubmissionRules)
+	if err != nil {
+		return err
+	}
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = time.Now().UTC()
+	}
+	if host.CreatedAt.IsZero() {
+		host.CreatedAt = time.Now().UTC()
+	}
+	host.PollID = p.ID
+	host.Role = poll.RoleHost
+	p.HostParticipantID = host.ID
+
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO polls (id, code, title, host_participant_id, library_scope, status,
+				submission_rules, voting_method, voting_config, allow_guests, results_live,
+				created_at, round1_closes_at, round2_closes_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			p.ID, p.Code, p.Title, p.HostParticipantID, string(p.LibraryScope), string(p.Status),
+			string(rules), p.VotingMethod, string(p.VotingConfig), boolToInt(p.AllowGuests), boolToInt(p.ResultsLive),
+			p.CreatedAt.UTC().Format(time.RFC3339Nano), timeText(p.Round1ClosesAt), timeText(p.Round2ClosesAt),
+		); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO participants (id, poll_id, display_name, session_token, jellyfin_user_id, role, created_at)
+			VALUES (?,?,?,?,?,?,?)`,
+			host.ID, host.PollID, host.DisplayName, host.SessionToken, host.JellyfinUserID, host.Role,
+			host.CreatedAt.UTC().Format(time.RFC3339Nano),
+		)
+		return err
+	})
+}
+
+func (s *Store) GetPollByCode(ctx context.Context, code string) (*poll.Poll, error) {
+	return s.scanPoll(s.db.QueryRowContext(ctx, pollSelect+` WHERE code = ?`, code))
+}
+
+func (s *Store) GetPollByID(ctx context.Context, id string) (*poll.Poll, error) {
+	return s.scanPoll(s.db.QueryRowContext(ctx, pollSelect+` WHERE id = ?`, id))
+}
+
+const pollSelect = `SELECT id, code, title, host_participant_id, library_scope, status,
+	submission_rules, voting_method, voting_config, allow_guests, results_live,
+	created_at, round1_closes_at, round2_closes_at FROM polls`
+
+func (s *Store) scanPoll(row *sql.Row) (*poll.Poll, error) {
+	var (
+		p                              poll.Poll
+		scope, status, rules, vmethod  string
+		vconfig                        string
+		allowGuests, resultsLive       int
+		createdAt                      string
+		r1, r2                         sql.NullString
+	)
+	err := row.Scan(&p.ID, &p.Code, &p.Title, &p.HostParticipantID, &scope, &status,
+		&rules, &vmethod, &vconfig, &allowGuests, &resultsLive, &createdAt, &r1, &r2)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, poll.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	p.LibraryScope = poll.LibraryScope(scope)
+	p.Status = poll.Status(status)
+	p.VotingMethod = vmethod
+	p.VotingConfig = json.RawMessage(vconfig)
+	p.AllowGuests = allowGuests != 0
+	p.ResultsLive = resultsLive != 0
+	p.CreatedAt = parseTime(createdAt)
+	p.Round1ClosesAt = parseNullTime(r1)
+	p.Round2ClosesAt = parseNullTime(r2)
+	if err := json.Unmarshal([]byte(rules), &p.SubmissionRules); err != nil {
+		return nil, fmt.Errorf("decode submission_rules: %w", err)
+	}
+	return &p, nil
+}
+
+func (s *Store) UpdatePollStatus(ctx context.Context, id string, status poll.Status) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE polls SET status = ? WHERE id = ?`, string(status), id)
+	if err != nil {
+		return err
+	}
+	return mustAffect(res)
+}
+
+func (s *Store) CodeExists(ctx context.Context, code string) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM polls WHERE code = ?`, code).Scan(&n)
+	return n > 0, err
+}
+
+// --- participants ---
+
+func (s *Store) CreateParticipant(ctx context.Context, p *poll.Participant) error {
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = time.Now().UTC()
+	}
+	if p.Role == "" {
+		p.Role = poll.RoleParticipant
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO participants (id, poll_id, display_name, session_token, jellyfin_user_id, role, created_at)
+		VALUES (?,?,?,?,?,?,?)`,
+		p.ID, p.PollID, p.DisplayName, p.SessionToken, p.JellyfinUserID, p.Role,
+		p.CreatedAt.UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+const participantSelect = `SELECT id, poll_id, display_name, session_token, jellyfin_user_id, role, created_at FROM participants`
+
+func (s *Store) GetParticipant(ctx context.Context, id string) (*poll.Participant, error) {
+	return scanParticipant(s.db.QueryRowContext(ctx, participantSelect+` WHERE id = ?`, id))
+}
+
+func (s *Store) GetParticipantBySession(ctx context.Context, pollID, token string) (*poll.Participant, error) {
+	return scanParticipant(s.db.QueryRowContext(ctx, participantSelect+` WHERE poll_id = ? AND session_token = ?`, pollID, token))
+}
+
+func scanParticipant(row *sql.Row) (*poll.Participant, error) {
+	var p poll.Participant
+	var createdAt string
+	err := row.Scan(&p.ID, &p.PollID, &p.DisplayName, &p.SessionToken, &p.JellyfinUserID, &p.Role, &createdAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, poll.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	p.CreatedAt = parseTime(createdAt)
+	return &p, nil
+}
+
+func (s *Store) ListParticipants(ctx context.Context, pollID string) ([]poll.Participant, error) {
+	rows, err := s.db.QueryContext(ctx, participantSelect+` WHERE poll_id = ? ORDER BY created_at`, pollID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []poll.Participant
+	for rows.Next() {
+		var p poll.Participant
+		var createdAt string
+		if err := rows.Scan(&p.ID, &p.PollID, &p.DisplayName, &p.SessionToken, &p.JellyfinUserID, &p.Role, &createdAt); err != nil {
+			return nil, err
+		}
+		p.CreatedAt = parseTime(createdAt)
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// --- nominations ---
+
+func (s *Store) AddNomination(ctx context.Context, n *poll.Nomination, nominatorID string) (*poll.Nomination, error) {
+	snapshot, err := json.Marshal(n.Snapshot)
+	if err != nil {
+		return nil, err
+	}
+	var effective *poll.Nomination
+	err = s.tx(ctx, func(tx *sql.Tx) error {
+		var existingID string
+		row := tx.QueryRowContext(ctx, `SELECT id FROM nominations WHERE poll_id = ? AND jellyfin_item_id = ?`,
+			n.PollID, n.JellyfinItemID)
+		switch err := row.Scan(&existingID); {
+		case errors.Is(err, sql.ErrNoRows):
+			if n.ID == "" {
+				n.ID = poll.NewID()
+			}
+			if n.CreatedAt.IsZero() {
+				n.CreatedAt = time.Now().UTC()
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO nominations (id, poll_id, jellyfin_item_id, snapshot, created_at)
+				VALUES (?,?,?,?,?)`,
+				n.ID, n.PollID, n.JellyfinItemID, string(snapshot), n.CreatedAt.UTC().Format(time.RFC3339Nano)); err != nil {
+				return err
+			}
+			existingID = n.ID
+		case err != nil:
+			return err
+		default:
+			n.ID = existingID
+		}
+		// Add nominator (idempotent).
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO nomination_nominators (nomination_id, participant_id, created_at)
+			VALUES (?,?,?)
+			ON CONFLICT(nomination_id, participant_id) DO NOTHING`,
+			existingID, nominatorID, nowText()); err != nil {
+			return err
+		}
+		effective = n
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return effective, nil
+}
+
+func (s *Store) WithdrawNomination(ctx context.Context, pollID, nominationID, participantID string) error {
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM nomination_nominators WHERE nomination_id = ? AND participant_id = ?`,
+			nominationID, participantID); err != nil {
+			return err
+		}
+		var remaining int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM nomination_nominators WHERE nomination_id = ?`,
+			nominationID).Scan(&remaining); err != nil {
+			return err
+		}
+		if remaining == 0 {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM nominations WHERE id = ? AND poll_id = ?`,
+				nominationID, pollID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (s *Store) ListNominations(ctx context.Context, pollID string) ([]poll.Nomination, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, poll_id, jellyfin_item_id, snapshot, created_at
+		FROM nominations WHERE poll_id = ? ORDER BY created_at`, pollID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var noms []poll.Nomination
+	index := map[string]int{}
+	for rows.Next() {
+		var n poll.Nomination
+		var snapshot, createdAt string
+		if err := rows.Scan(&n.ID, &n.PollID, &n.JellyfinItemID, &snapshot, &createdAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(snapshot), &n.Snapshot); err != nil {
+			return nil, fmt.Errorf("decode snapshot: %w", err)
+		}
+		n.CreatedAt = parseTime(createdAt)
+		index[n.ID] = len(noms)
+		noms = append(noms, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Attach nominators.
+	nrows, err := s.db.QueryContext(ctx, `
+		SELECT nn.nomination_id, nn.participant_id
+		FROM nomination_nominators nn
+		JOIN nominations n ON n.id = nn.nomination_id
+		WHERE n.poll_id = ? ORDER BY nn.created_at`, pollID)
+	if err != nil {
+		return nil, err
+	}
+	defer nrows.Close()
+	for nrows.Next() {
+		var nomID, participantID string
+		if err := nrows.Scan(&nomID, &participantID); err != nil {
+			return nil, err
+		}
+		if i, ok := index[nomID]; ok {
+			noms[i].Nominators = append(noms[i].Nominators, participantID)
+		}
+	}
+	return noms, nrows.Err()
+}
+
+func (s *Store) CountNominationsByParticipant(ctx context.Context, pollID, participantID string) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(1) FROM nomination_nominators nn
+		JOIN nominations nm ON nm.id = nn.nomination_id
+		WHERE nm.poll_id = ? AND nn.participant_id = ?`, pollID, participantID).Scan(&n)
+	return n, err
+}
+
+// --- votes ---
+
+func (s *Store) ReplaceVotes(ctx context.Context, pollID, participantID string, votes []poll.Vote) error {
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM votes WHERE poll_id = ? AND participant_id = ?`,
+			pollID, participantID); err != nil {
+			return err
+		}
+		for _, v := range votes {
+			if v.ID == "" {
+				v.ID = poll.NewID()
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO votes (id, poll_id, participant_id, nomination_id, value, created_at)
+				VALUES (?,?,?,?,?,?)`,
+				v.ID, pollID, participantID, v.NominationID, v.Value, nowText()); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (s *Store) ListVotes(ctx context.Context, pollID string) ([]poll.Vote, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, poll_id, participant_id, nomination_id, value, created_at
+		FROM votes WHERE poll_id = ? ORDER BY created_at`, pollID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []poll.Vote
+	for rows.Next() {
+		var v poll.Vote
+		var createdAt string
+		if err := rows.Scan(&v.ID, &v.PollID, &v.ParticipantID, &v.NominationID, &v.Value, &createdAt); err != nil {
+			return nil, err
+		}
+		v.CreatedAt = parseTime(createdAt)
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CountVoters(ctx context.Context, pollID string) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT participant_id) FROM votes WHERE poll_id = ?`, pollID).Scan(&n)
+	return n, err
+}
+
+func (s *Store) HasVoted(ctx context.Context, pollID, participantID string) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM votes WHERE poll_id = ? AND participant_id = ?`,
+		pollID, participantID).Scan(&n)
+	return n > 0, err
+}
+
+// --- helpers ---
+
+func (s *Store) tx(ctx context.Context, fn func(*sql.Tx) error) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+func mustAffect(res sql.Result) error {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return poll.ErrNotFound
+	}
+	return nil
+}
