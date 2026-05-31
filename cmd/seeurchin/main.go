@@ -1,0 +1,91 @@
+// Command seeurchin runs the group movie/show picker server: it serves the
+// REST + SSE API and the embedded SvelteKit frontend, backed by SQLite and a
+// Jellyfin library.
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/enderu/seeurchin/internal/auth"
+	"github.com/enderu/seeurchin/internal/config"
+	"github.com/enderu/seeurchin/internal/httpapi"
+	"github.com/enderu/seeurchin/internal/jellyfin"
+	"github.com/enderu/seeurchin/internal/poll"
+	"github.com/enderu/seeurchin/internal/store"
+)
+
+// itemResolver adapts the Jellyfin client to the poll.ItemResolver interface,
+// keeping the domain package free of a Jellyfin dependency.
+type itemResolver struct{ jf *jellyfin.Client }
+
+func (r itemResolver) GetItem(ctx context.Context, id string) (*poll.ResolvedItem, error) {
+	it, err := r.jf.GetItem(ctx, id)
+	if err != nil || it == nil {
+		return nil, err
+	}
+	return &poll.ResolvedItem{
+		ID:       it.ID,
+		Title:    it.Name,
+		Year:     it.ProductionYear,
+		Type:     it.Type,
+		Runtime:  it.RuntimeMinutes(),
+		Overview: it.Overview,
+		ImageTag: it.PrimaryImageTag(),
+	}, nil
+}
+
+func main() {
+	cfg, err := config.FromEnv()
+	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
+	if cfg.SessionSecretGenerated {
+		log.Printf("warning: SEEURCHIN_SESSION_SECRET not set; using an ephemeral secret (sessions reset on restart)")
+	}
+
+	st, err := store.Open(cfg.DBPath)
+	if err != nil {
+		log.Fatalf("open database %q: %v", cfg.DBPath, err)
+	}
+	defer st.Close()
+
+	jf := jellyfin.New(cfg.Jellyfin.URL, cfg.Jellyfin.APIKey)
+	pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := jf.Ping(pingCtx); err != nil {
+		log.Printf("warning: cannot reach Jellyfin at %s: %v", cfg.Jellyfin.URL, err)
+	}
+	cancel()
+
+	svc := poll.NewService(st, itemResolver{jf}, 0)
+	sessions := auth.NewSessions(cfg.SessionSecret)
+	hub := httpapi.NewHub()
+	srv := httpapi.NewServer(cfg, svc, st, jf, sessions, hub)
+
+	httpServer := &http.Server{
+		Addr:              cfg.Addr,
+		Handler:           srv.Routes(),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	go func() {
+		log.Printf("seeurchin listening on %s (public base URL %s)", cfg.Addr, cfg.BaseURL)
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server: %v", err)
+		}
+	}()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	<-stop
+
+	log.Println("shutting down...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = httpServer.Shutdown(shutdownCtx)
+}
