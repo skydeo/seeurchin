@@ -60,10 +60,23 @@ type Poll struct {
 	VotingConfig      json.RawMessage `json:"voting_config"`
 	AllowGuests       bool            `json:"allow_guests"`
 	ResultsLive       bool            `json:"results_live"` // reveal tallies during round 2
+	RevealNominators  bool            `json:"reveal_nominators"`
+	RevealScope       string          `json:"reveal_scope"` // "winner" | "all" (when RevealNominators)
+	Genres            []string        `json:"genres"`       // nomination pool restricted to these genres (empty = all)
 	CreatedAt         time.Time       `json:"created_at"`
 	Round1ClosesAt    *time.Time      `json:"round1_closes_at,omitempty"`
 	Round2ClosesAt    *time.Time      `json:"round2_closes_at,omitempty"`
+	// WinnerNominationID freezes the decided winner for non-deterministic or
+	// multi-round methods (e.g. random) so the outcome is stable across reads.
+	WinnerNominationID string     `json:"winner_nomination_id,omitempty"`
+	DecidedAt          *time.Time `json:"decided_at,omitempty"`
 }
+
+// RevealScope values for showing who nominated titles on the results screen.
+const (
+	RevealWinner = "winner" // reveal nominators of the winner(s) only
+	RevealAll    = "all"    // reveal nominators of every title
+)
 
 // Participant is someone taking part in a poll. Guests have an empty
 // JellyfinUserID; Phase 2 Jellyfin login populates it.

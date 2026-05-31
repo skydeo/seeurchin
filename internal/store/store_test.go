@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"path/filepath"
 	"testing"
@@ -125,6 +126,71 @@ func TestNominationDedupeAndWithdraw(t *testing.T) {
 	if len(noms) != 0 {
 		t.Fatalf("expected nomination deleted, got %+v", noms)
 	}
+}
+
+func TestMigrationUpgradesOldDatabaseInPlace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+
+	// Simulate a pre-v1.1 database: a polls table without the newer columns,
+	// holding a row.
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	if _, err := raw.Exec(`CREATE TABLE polls (
+		id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+		host_participant_id TEXT NOT NULL DEFAULT '', library_scope TEXT NOT NULL,
+		status TEXT NOT NULL, submission_rules TEXT NOT NULL, voting_method TEXT NOT NULL,
+		voting_config TEXT NOT NULL, allow_guests INTEGER NOT NULL DEFAULT 1,
+		results_live INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+		round1_closes_at TEXT, round2_closes_at TEXT)`); err != nil {
+		t.Fatalf("create old table: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO polls
+		(id, code, title, library_scope, status, submission_rules, voting_method, voting_config, created_at)
+		VALUES ('p1','OLD123','Old Poll','both','round1','{"min":0,"max":0,"required":0}','approval','{}','2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatalf("insert old row: %v", err)
+	}
+	_ = raw.Close()
+
+	// Opening through the store migrates in place.
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open (migrate): %v", err)
+	}
+	ctx := context.Background()
+	for _, c := range []string{"reveal_nominators", "reveal_scope", "genres", "winner_nomination_id", "decided_at"} {
+		has, err := s.columnExists(ctx, "polls", c)
+		if err != nil {
+			t.Fatalf("columnExists %s: %v", c, err)
+		}
+		if !has {
+			t.Errorf("migration did not add column %q", c)
+		}
+	}
+
+	// The existing row survives and reads back with sane defaults.
+	got, err := s.GetPollByCode(ctx, "OLD123")
+	if err != nil {
+		t.Fatalf("GetPollByCode after migrate: %v", err)
+	}
+	if got.Title != "Old Poll" {
+		t.Fatalf("row not preserved: %+v", got)
+	}
+	if got.RevealScope != poll.RevealWinner {
+		t.Errorf("reveal_scope default = %q, want %q", got.RevealScope, poll.RevealWinner)
+	}
+	if got.Genres == nil || len(got.Genres) != 0 {
+		t.Errorf("genres default = %v, want []", got.Genres)
+	}
+	_ = s.Close()
+
+	// Migration is idempotent: opening the already-upgraded DB must not error.
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("second Open (idempotent migrate): %v", err)
+	}
+	_ = s2.Close()
 }
 
 func TestReplaceVotes(t *testing.T) {

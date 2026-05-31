@@ -56,6 +56,11 @@ CREATE TABLE IF NOT EXISTS polls (
   voting_config       TEXT NOT NULL,
   allow_guests        INTEGER NOT NULL DEFAULT 1,
   results_live        INTEGER NOT NULL DEFAULT 0,
+  reveal_nominators   INTEGER NOT NULL DEFAULT 0,
+  reveal_scope        TEXT NOT NULL DEFAULT 'winner',
+  genres              TEXT NOT NULL DEFAULT '[]',
+  winner_nomination_id TEXT NOT NULL DEFAULT '',
+  decided_at          TEXT,
   created_at          TEXT NOT NULL,
   round1_closes_at    TEXT,
   round2_closes_at    TEXT
@@ -100,8 +105,61 @@ CREATE INDEX IF NOT EXISTS idx_votes_participant ON votes(poll_id, participant_i
 `
 
 func (s *Store) migrate(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, schema)
-	return err
+	if _, err := s.db.ExecContext(ctx, schema); err != nil {
+		return err
+	}
+	return s.addColumns(ctx)
+}
+
+// addColumns idempotently brings an existing database up to the current schema
+// by adding any columns introduced after it was first created. The schema const
+// above is the fresh-install path; this covers in-place upgrades (the deployed
+// instance carries live data, so we never drop and recreate).
+func (s *Store) addColumns(ctx context.Context) error {
+	type col struct{ table, name, ddl string }
+	wanted := []col{
+		{"polls", "reveal_nominators", "INTEGER NOT NULL DEFAULT 0"},
+		{"polls", "reveal_scope", "TEXT NOT NULL DEFAULT 'winner'"},
+		{"polls", "genres", "TEXT NOT NULL DEFAULT '[]'"},
+		{"polls", "winner_nomination_id", "TEXT NOT NULL DEFAULT ''"},
+		{"polls", "decided_at", "TEXT"},
+	}
+	for _, c := range wanted {
+		has, err := s.columnExists(ctx, c.table, c.name)
+		if err != nil {
+			return err
+		}
+		if has {
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", c.table, c.name, c.ddl)); err != nil {
+			return fmt.Errorf("add column %s.%s: %w", c.table, c.name, err)
+		}
+	}
+	return nil
+}
+
+// columnExists reports whether table has a column named column.
+func (s *Store) columnExists(ctx context.Context, table, column string) (bool, error) {
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			cid, notnull, pk int
+			name, ctype      string
+			dflt             sql.NullString
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 // --- time helpers ---
@@ -142,6 +200,16 @@ func (s *Store) CreatePoll(ctx context.Context, p *poll.Poll, host *poll.Partici
 	if err != nil {
 		return err
 	}
+	if p.Genres == nil {
+		p.Genres = []string{}
+	}
+	genres, err := json.Marshal(p.Genres)
+	if err != nil {
+		return err
+	}
+	if p.RevealScope == "" {
+		p.RevealScope = poll.RevealWinner
+	}
 	if p.CreatedAt.IsZero() {
 		p.CreatedAt = time.Now().UTC()
 	}
@@ -156,10 +224,12 @@ func (s *Store) CreatePoll(ctx context.Context, p *poll.Poll, host *poll.Partici
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO polls (id, code, title, host_participant_id, library_scope, status,
 				submission_rules, voting_method, voting_config, allow_guests, results_live,
+				reveal_nominators, reveal_scope, genres, winner_nomination_id, decided_at,
 				created_at, round1_closes_at, round2_closes_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			p.ID, p.Code, p.Title, p.HostParticipantID, string(p.LibraryScope), string(p.Status),
 			string(rules), p.VotingMethod, string(p.VotingConfig), boolToInt(p.AllowGuests), boolToInt(p.ResultsLive),
+			boolToInt(p.RevealNominators), p.RevealScope, string(genres), p.WinnerNominationID, timeText(p.DecidedAt),
 			p.CreatedAt.UTC().Format(time.RFC3339Nano), timeText(p.Round1ClosesAt), timeText(p.Round2ClosesAt),
 		); err != nil {
 			return err
@@ -184,19 +254,25 @@ func (s *Store) GetPollByID(ctx context.Context, id string) (*poll.Poll, error) 
 
 const pollSelect = `SELECT id, code, title, host_participant_id, library_scope, status,
 	submission_rules, voting_method, voting_config, allow_guests, results_live,
+	reveal_nominators, reveal_scope, genres, winner_nomination_id, decided_at,
 	created_at, round1_closes_at, round2_closes_at FROM polls`
 
 func (s *Store) scanPoll(row *sql.Row) (*poll.Poll, error) {
 	var (
-		p                              poll.Poll
-		scope, status, rules, vmethod  string
-		vconfig                        string
-		allowGuests, resultsLive       int
-		createdAt                      string
-		r1, r2                         sql.NullString
+		p                                poll.Poll
+		scope, status, rules, vmethod    string
+		vconfig                          string
+		allowGuests, resultsLive         int
+		revealNominators                 int
+		revealScope, genres, winnerNomID string
+		decidedAt                        sql.NullString
+		createdAt                        string
+		r1, r2                           sql.NullString
 	)
 	err := row.Scan(&p.ID, &p.Code, &p.Title, &p.HostParticipantID, &scope, &status,
-		&rules, &vmethod, &vconfig, &allowGuests, &resultsLive, &createdAt, &r1, &r2)
+		&rules, &vmethod, &vconfig, &allowGuests, &resultsLive,
+		&revealNominators, &revealScope, &genres, &winnerNomID, &decidedAt,
+		&createdAt, &r1, &r2)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, poll.ErrNotFound
 	}
@@ -209,9 +285,19 @@ func (s *Store) scanPoll(row *sql.Row) (*poll.Poll, error) {
 	p.VotingConfig = json.RawMessage(vconfig)
 	p.AllowGuests = allowGuests != 0
 	p.ResultsLive = resultsLive != 0
+	p.RevealNominators = revealNominators != 0
+	p.RevealScope = revealScope
+	p.WinnerNominationID = winnerNomID
+	p.DecidedAt = parseNullTime(decidedAt)
 	p.CreatedAt = parseTime(createdAt)
 	p.Round1ClosesAt = parseNullTime(r1)
 	p.Round2ClosesAt = parseNullTime(r2)
+	p.Genres = []string{}
+	if genres != "" {
+		if err := json.Unmarshal([]byte(genres), &p.Genres); err != nil {
+			return nil, fmt.Errorf("decode genres: %w", err)
+		}
+	}
 	if err := json.Unmarshal([]byte(rules), &p.SubmissionRules); err != nil {
 		return nil, fmt.Errorf("decode submission_rules: %w", err)
 	}
