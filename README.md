@@ -180,7 +180,9 @@ Create-poll body:
   "voting_method": "approval",       // "approval" | "ranked" | "score"
   "voting_config": null,             // method defaults used when null
   "allow_guests": true,
-  "results_live": false
+  "results_live": false,
+  "reveal_nominators": false,        // show who nominated, on the results screen
+  "reveal_scope": "winner"           // "winner" | "all" (when reveal_nominators)
 }
 ```
 

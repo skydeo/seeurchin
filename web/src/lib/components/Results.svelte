@@ -35,6 +35,9 @@
 						{:else}
 							<p class="font-semibold">{w.title}</p>
 						{/if}
+						{#if w.nominators && w.nominators.length > 0}
+							<p class="mt-1 text-xs text-slate-400">Nominated by {w.nominators.join(', ')}</p>
+						{/if}
 					</div>
 				{/each}
 			</div>
@@ -57,6 +60,9 @@
 								style="width: {(e.score / max) * 100}%"
 							></div>
 						</div>
+						{#if e.nominators && e.nominators.length > 0}
+							<p class="mt-1 text-[11px] text-slate-500">by {e.nominators.join(', ')}</p>
+						{/if}
 					</div>
 				{/each}
 			</div>

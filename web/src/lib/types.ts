@@ -32,6 +32,7 @@ export interface ResultEntry {
 	nomination_id: string;
 	title: string;
 	score: number;
+	nominators?: string[];
 }
 
 export interface RoundResult {
@@ -59,6 +60,8 @@ export interface PollView {
 	voting_config: Record<string, unknown>;
 	allow_guests: boolean;
 	results_live: boolean;
+	reveal_nominators: boolean;
+	reveal_scope: string;
 	participant_count: number;
 	voter_count: number;
 	nominations: NominationView[];
@@ -92,4 +95,6 @@ export interface CreatePollBody {
 	submission_rules: SubmissionRules;
 	allow_guests: boolean;
 	results_live: boolean;
+	reveal_nominators: boolean;
+	reveal_scope: string;
 }

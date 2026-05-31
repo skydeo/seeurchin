@@ -25,6 +25,8 @@
 	let ruleRequired = $state(2);
 	let allowGuests = $state(true);
 	let resultsLive = $state(false);
+	let revealNominators = $state(false);
+	let revealScope = $state('winner');
 	let creating = $state(false);
 	let error = $state('');
 
@@ -61,7 +63,9 @@
 			voting_config: config,
 			submission_rules: rules,
 			allow_guests: allowGuests,
-			results_live: resultsLive
+			results_live: resultsLive,
+			reveal_nominators: revealNominators,
+			reveal_scope: revealScope
 		};
 		creating = true;
 		try {
@@ -201,6 +205,19 @@
 				<span class="text-slate-300">Show live results during voting</span>
 				<input type="checkbox" bind:checked={resultsLive} class="h-5 w-5 accent-brand-500" />
 			</label>
+			<label class="flex items-center justify-between gap-3 text-sm">
+				<span class="text-slate-300">Reveal who nominated, on the results screen</span>
+				<input type="checkbox" bind:checked={revealNominators} class="h-5 w-5 accent-brand-500" />
+			</label>
+			{#if revealNominators}
+				<label class="flex items-center justify-between gap-3 pl-1 text-sm">
+					<span class="text-slate-400">Show nominators for</span>
+					<select bind:value={revealScope} class="rounded-lg bg-slate-800 px-2 py-1.5 ring-1 ring-white/10">
+						<option value="winner">The winner only</option>
+						<option value="all">Every title</option>
+					</select>
+				</label>
+			{/if}
 		</div>
 
 		{#if error}<p class="text-sm text-rose-400">{error}</p>{/if}

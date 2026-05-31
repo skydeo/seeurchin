@@ -21,6 +21,8 @@ type pollView struct {
 	VotingConfig      json.RawMessage      `json:"voting_config"`
 	AllowGuests       bool                 `json:"allow_guests"`
 	ResultsLive       bool                 `json:"results_live"`
+	RevealNominators  bool                 `json:"reveal_nominators"`
+	RevealScope       string               `json:"reveal_scope"`
 	ParticipantCount  int                  `json:"participant_count"`
 	VoterCount        int                  `json:"voter_count"`
 	Nominations       []nominationView     `json:"nominations"`
@@ -52,16 +54,17 @@ type meView struct {
 }
 
 type resultsView struct {
-	Method  string         `json:"method"`
-	Winners []resultEntry  `json:"winners"`
-	Ranked  []resultEntry  `json:"ranked"`
+	Method  string               `json:"method"`
+	Winners []resultEntry        `json:"winners"`
+	Ranked  []resultEntry        `json:"ranked"`
 	Rounds  []voting.RoundResult `json:"rounds,omitempty"`
 }
 
 type resultEntry struct {
-	NominationID string  `json:"nomination_id"`
-	Title        string  `json:"title"`
-	Score        float64 `json:"score"`
+	NominationID string   `json:"nomination_id"`
+	Title        string   `json:"title"`
+	Score        float64  `json:"score"`
+	Nominators   []string `json:"nominators,omitempty"` // display names, when the poll reveals them
 }
 
 // buildPollView assembles the full state for poll p as seen by participant me
@@ -97,6 +100,8 @@ func (s *Server) buildPollView(ctx context.Context, p *poll.Poll, me *poll.Parti
 		VotingConfig:      p.VotingConfig,
 		AllowGuests:       p.AllowGuests,
 		ResultsLive:       p.ResultsLive,
+		RevealNominators:  p.RevealNominators,
+		RevealScope:       p.RevealScope,
 		ParticipantCount:  len(participants),
 		VoterCount:        voterCount,
 		ShareURL:          s.cfg.BaseURL + "/p/" + p.Code,
@@ -184,6 +189,22 @@ func (s *Server) computeResults(ctx context.Context, p *poll.Poll, noms []poll.N
 	for _, n := range noms {
 		title[n.ID] = n.Snapshot.Title
 	}
+
+	// Optionally reveal who nominated each title, but only once the poll is
+	// closed (so it never biases live voting). "winner" scope reveals only the
+	// winner(s); "all" reveals every title.
+	var nominators map[string][]string
+	if p.RevealNominators && p.Status == poll.StatusClosed {
+		nominators, err = s.nominatorNames(ctx, p, noms)
+		if err != nil {
+			return nil, err
+		}
+	}
+	winnerSet := make(map[string]bool, len(res.WinnerIDs))
+	for _, id := range res.WinnerIDs {
+		winnerSet[id] = true
+	}
+
 	// Initialize slices so an empty tally serializes as [] not null — the
 	// frontend dereferences r.ranked / r.winners without a per-field guard.
 	rv := &resultsView{
@@ -193,10 +214,42 @@ func (s *Server) computeResults(ctx context.Context, p *poll.Poll, noms []poll.N
 		Ranked:  []resultEntry{},
 	}
 	for _, r := range res.Ranked {
-		rv.Ranked = append(rv.Ranked, resultEntry{NominationID: r.NominationID, Title: title[r.NominationID], Score: r.Score})
+		e := resultEntry{NominationID: r.NominationID, Title: title[r.NominationID], Score: r.Score}
+		if nominators != nil && (p.RevealScope == poll.RevealAll || winnerSet[r.NominationID]) {
+			e.Nominators = nominators[r.NominationID]
+		}
+		rv.Ranked = append(rv.Ranked, e)
 	}
 	for _, id := range res.WinnerIDs {
-		rv.Winners = append(rv.Winners, resultEntry{NominationID: id, Title: title[id]})
+		e := resultEntry{NominationID: id, Title: title[id]}
+		if nominators != nil {
+			e.Nominators = nominators[id]
+		}
+		rv.Winners = append(rv.Winners, e)
 	}
 	return rv, nil
+}
+
+// nominatorNames maps each nomination ID to the display names of the
+// participants who nominated it.
+func (s *Server) nominatorNames(ctx context.Context, p *poll.Poll, noms []poll.Nomination) (map[string][]string, error) {
+	participants, err := s.repo.ListParticipants(ctx, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	name := make(map[string]string, len(participants))
+	for _, pt := range participants {
+		name[pt.ID] = pt.DisplayName
+	}
+	out := make(map[string][]string, len(noms))
+	for _, n := range noms {
+		names := make([]string, 0, len(n.Nominators))
+		for _, id := range n.Nominators {
+			if nm := name[id]; nm != "" {
+				names = append(names, nm)
+			}
+		}
+		out[n.ID] = names
+	}
+	return out, nil
 }

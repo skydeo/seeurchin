@@ -178,6 +178,55 @@ func TestFullPollFlow(t *testing.T) {
 	}
 }
 
+func TestRevealNominatorsOnResults(t *testing.T) {
+	ts := newTestServer(t)
+	host := newClient(t)
+	guest := newClient(t)
+
+	// reveal_nominators with the default scope ("winner").
+	var created pollView
+	do(t, host, http.MethodPost, ts.URL+"/api/polls", map[string]any{
+		"title": "Reveal", "host_name": "Alice", "library_scope": "movie",
+		"voting_method": "approval", "allow_guests": true, "reveal_nominators": true,
+	}, &created)
+	code := created.Code
+	if created.RevealScope != "winner" {
+		t.Fatalf("default reveal_scope = %q, want winner", created.RevealScope)
+	}
+
+	// Alice nominates m1 (the eventual winner); Bob joins and nominates m3.
+	do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/nominations", map[string]string{"item_id": "m1"}, nil)
+	do(t, guest, http.MethodPost, ts.URL+"/api/polls/"+code+"/join", map[string]string{"display_name": "Bob"}, nil)
+	do(t, guest, http.MethodPost, ts.URL+"/api/polls/"+code+"/nominations", map[string]string{"item_id": "m3"}, nil)
+
+	var r2 pollView
+	do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/advance", nil, &r2)
+	m1 := nomIDByItem(r2, "m1")
+	m3 := nomIDByItem(r2, "m3")
+
+	// Both vote m1 -> Dune wins.
+	do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/votes", map[string]any{"selections": map[string]int{m1: 1}}, nil)
+	do(t, guest, http.MethodPost, ts.URL+"/api/polls/"+code+"/votes", map[string]any{"selections": map[string]int{m1: 1}}, nil)
+	do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/advance", nil, nil) // close
+
+	var results resultsView
+	if c := do(t, host, http.MethodGet, ts.URL+"/api/polls/"+code+"/results", nil, &results); c != http.StatusOK {
+		t.Fatalf("results status = %d", c)
+	}
+	if len(results.Winners) != 1 || results.Winners[0].Title != "Dune" {
+		t.Fatalf("winner = %+v, want Dune", results.Winners)
+	}
+	if got := results.Winners[0].Nominators; len(got) != 1 || got[0] != "Alice" {
+		t.Fatalf("winner nominators = %v, want [Alice]", got)
+	}
+	// scope=winner: non-winning titles hide their nominators.
+	for _, e := range results.Ranked {
+		if e.NominationID == m3 && len(e.Nominators) != 0 {
+			t.Fatalf("non-winner %q should hide nominators with scope=winner, got %v", e.Title, e.Nominators)
+		}
+	}
+}
+
 func TestGuestRejectedWhenDisallowed(t *testing.T) {
 	ts := newTestServer(t)
 	host := newClient(t)

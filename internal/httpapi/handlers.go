@@ -33,14 +33,16 @@ func (s *Server) handleMethods(w http.ResponseWriter, _ *http.Request) {
 }
 
 type createPollReq struct {
-	Title           string               `json:"title"`
-	HostName        string               `json:"host_name"`
-	LibraryScope    string               `json:"library_scope"`
-	SubmissionRules poll.SubmissionRules `json:"submission_rules"`
-	VotingMethod    string               `json:"voting_method"`
-	VotingConfig    json.RawMessage      `json:"voting_config"`
-	AllowGuests     bool                 `json:"allow_guests"`
-	ResultsLive     bool                 `json:"results_live"`
+	Title            string               `json:"title"`
+	HostName         string               `json:"host_name"`
+	LibraryScope     string               `json:"library_scope"`
+	SubmissionRules  poll.SubmissionRules `json:"submission_rules"`
+	VotingMethod     string               `json:"voting_method"`
+	VotingConfig     json.RawMessage      `json:"voting_config"`
+	AllowGuests      bool                 `json:"allow_guests"`
+	ResultsLive      bool                 `json:"results_live"`
+	RevealNominators bool                 `json:"reveal_nominators"`
+	RevealScope      string               `json:"reveal_scope"`
 }
 
 func (s *Server) handleCreatePoll(w http.ResponseWriter, r *http.Request) {
@@ -50,14 +52,16 @@ func (s *Server) handleCreatePoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, host, err := s.svc.CreatePoll(r.Context(), poll.CreatePollInput{
-		Title:           req.Title,
-		HostName:        req.HostName,
-		LibraryScope:    poll.LibraryScope(req.LibraryScope),
-		SubmissionRules: req.SubmissionRules,
-		VotingMethod:    req.VotingMethod,
-		VotingConfig:    req.VotingConfig,
-		AllowGuests:     req.AllowGuests,
-		ResultsLive:     req.ResultsLive,
+		Title:            req.Title,
+		HostName:         req.HostName,
+		LibraryScope:     poll.LibraryScope(req.LibraryScope),
+		SubmissionRules:  req.SubmissionRules,
+		VotingMethod:     req.VotingMethod,
+		VotingConfig:     req.VotingConfig,
+		AllowGuests:      req.AllowGuests,
+		ResultsLive:      req.ResultsLive,
+		RevealNominators: req.RevealNominators,
+		RevealScope:      req.RevealScope,
 	})
 	if err != nil {
 		s.writeErr(w, err)

@@ -36,9 +36,13 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Msg }
 
-func errBad(format string, a ...any) *Error   { return &Error{Code: 400, Msg: fmt.Sprintf(format, a...)} }
-func errForbid(format string, a ...any) *Error { return &Error{Code: 403, Msg: fmt.Sprintf(format, a...)} }
-func errConflict(format string, a ...any) *Error { return &Error{Code: 409, Msg: fmt.Sprintf(format, a...)} }
+func errBad(format string, a ...any) *Error { return &Error{Code: 400, Msg: fmt.Sprintf(format, a...)} }
+func errForbid(format string, a ...any) *Error {
+	return &Error{Code: 403, Msg: fmt.Sprintf(format, a...)}
+}
+func errConflict(format string, a ...any) *Error {
+	return &Error{Code: 409, Msg: fmt.Sprintf(format, a...)}
+}
 
 // Service holds the poll business logic.
 type Service struct {
@@ -57,14 +61,16 @@ func NewService(repo Repository, items ItemResolver, codeLen int) *Service {
 
 // CreatePollInput describes a new poll.
 type CreatePollInput struct {
-	Title           string
-	HostName        string
-	LibraryScope    LibraryScope
-	SubmissionRules SubmissionRules
-	VotingMethod    string
-	VotingConfig    json.RawMessage
-	AllowGuests     bool
-	ResultsLive     bool
+	Title            string
+	HostName         string
+	LibraryScope     LibraryScope
+	SubmissionRules  SubmissionRules
+	VotingMethod     string
+	VotingConfig     json.RawMessage
+	AllowGuests      bool
+	ResultsLive      bool
+	RevealNominators bool
+	RevealScope      string
 }
 
 // CreatePoll validates input, opens a poll directly into round 1, and creates
@@ -89,6 +95,12 @@ func (s *Service) CreatePoll(ctx context.Context, in CreatePollInput) (*Poll, *P
 	if err := validateRules(in.SubmissionRules); err != nil {
 		return nil, nil, err
 	}
+	if in.RevealScope == "" {
+		in.RevealScope = RevealWinner
+	}
+	if in.RevealScope != RevealWinner && in.RevealScope != RevealAll {
+		return nil, nil, errBad("invalid reveal scope %q", in.RevealScope)
+	}
 
 	method, ok := voting.Get(in.VotingMethod)
 	if !ok {
@@ -110,16 +122,18 @@ func (s *Service) CreatePoll(ctx context.Context, in CreatePollInput) (*Poll, *P
 	}
 
 	p := &Poll{
-		ID:              NewID(),
-		Code:            code,
-		Title:           title,
-		LibraryScope:    in.LibraryScope,
-		Status:          StatusRound1,
-		SubmissionRules: in.SubmissionRules,
-		VotingMethod:    in.VotingMethod,
-		VotingConfig:    cfg,
-		AllowGuests:     in.AllowGuests,
-		ResultsLive:     in.ResultsLive,
+		ID:               NewID(),
+		Code:             code,
+		Title:            title,
+		LibraryScope:     in.LibraryScope,
+		Status:           StatusRound1,
+		SubmissionRules:  in.SubmissionRules,
+		VotingMethod:     in.VotingMethod,
+		VotingConfig:     cfg,
+		AllowGuests:      in.AllowGuests,
+		ResultsLive:      in.ResultsLive,
+		RevealNominators: in.RevealNominators,
+		RevealScope:      in.RevealScope,
 	}
 	host := &Participant{
 		ID:           NewID(),
