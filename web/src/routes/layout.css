@@ -1,0 +1,34 @@
+@import 'tailwindcss';
+
+@theme {
+	--color-brand-50: #eef5ff;
+	--color-brand-300: #8ab4ff;
+	--color-brand-400: #5d92ff;
+	--color-brand-500: #3b76f6;
+	--color-brand-600: #2a5fe0;
+}
+
+:root {
+	color-scheme: dark;
+}
+
+html,
+body {
+	min-height: 100%;
+}
+
+body {
+	background:
+		radial-gradient(1200px 600px at 80% -10%, rgba(59, 118, 246, 0.12), transparent 60%),
+		radial-gradient(900px 500px at -10% 10%, rgba(124, 58, 237, 0.1), transparent 55%), #020617;
+	color: #e2e8f0;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizelegibility;
+}
+
+/* Hide number input spinners for a cleaner look. */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+	appearance: none;
+	margin: 0;
+}

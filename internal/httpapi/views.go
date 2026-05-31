@@ -43,11 +43,12 @@ type nominationView struct {
 }
 
 type meView struct {
-	ID              string `json:"id"`
-	DisplayName     string `json:"display_name"`
-	IsHost          bool   `json:"is_host"`
-	NominationCount int    `json:"nomination_count"`
-	HasVoted        bool   `json:"has_voted"`
+	ID              string         `json:"id"`
+	DisplayName     string         `json:"display_name"`
+	IsHost          bool           `json:"is_host"`
+	NominationCount int            `json:"nomination_count"`
+	HasVoted        bool           `json:"has_voted"`
+	MySelections    map[string]int `json:"my_selections"`
 }
 
 type resultsView struct {
@@ -140,6 +141,19 @@ func (s *Server) buildPollView(ctx context.Context, p *poll.Poll, me *poll.Parti
 			IsHost:          me.IsHost(),
 			NominationCount: count,
 			HasVoted:        voted,
+		}
+		if p.Status == poll.StatusRound2 || p.Status == poll.StatusClosed {
+			votes, err := s.repo.ListVotes(ctx, p.ID)
+			if err != nil {
+				return pollView{}, err
+			}
+			sel := map[string]int{}
+			for _, v := range votes {
+				if v.ParticipantID == me.ID {
+					sel[v.NominationID] = v.Value
+				}
+			}
+			view.Me.MySelections = sel
 		}
 	}
 
