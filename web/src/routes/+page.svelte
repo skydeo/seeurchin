@@ -78,6 +78,23 @@
 	}
 
 	const num = (v: unknown) => Number(v ?? 0);
+
+	// Self-vote control maps to the method config's max_self_votes:
+	//   unlimited -> -1, none -> 0, limited -> N. Falls back to the legacy
+	//   allow_self_vote bool when max_self_votes is unset.
+	const selfVoteMode = $derived.by(() => {
+		const m = config.max_self_votes;
+		if (m === undefined || m === null) return config.allow_self_vote === false ? 'none' : 'unlimited';
+		const n = Number(m);
+		if (n < 0) return 'unlimited';
+		if (n === 0) return 'none';
+		return 'limited';
+	});
+	function setSelfVote(mode: string) {
+		if (mode === 'unlimited') config.max_self_votes = -1;
+		else if (mode === 'none') config.max_self_votes = 0;
+		else config.max_self_votes = Math.max(1, num(config.max_self_votes) || 1);
+	}
 </script>
 
 <svelte:head><title>seeurchin — group movie night picker</title></svelte:head>
@@ -190,9 +207,19 @@
 					</label>
 				{/if}
 				<label class="flex items-center justify-between gap-3">
-					<span class="text-slate-300">Allow voting for your own pick</span>
-					<input type="checkbox" checked={config.allow_self_vote !== false} onchange={(e) => (config.allow_self_vote = e.currentTarget.checked)} class="h-5 w-5 accent-brand-500" />
+					<span class="text-slate-300">Voting for your own picks</span>
+					<select value={selfVoteMode} onchange={(e) => setSelfVote(e.currentTarget.value)} class="rounded-lg bg-slate-900 px-2 py-1.5 ring-1 ring-white/10">
+						<option value="unlimited">Allowed</option>
+						<option value="none">Not allowed</option>
+						<option value="limited">Limited…</option>
+					</select>
 				</label>
+				{#if selfVoteMode === 'limited'}
+					<label class="flex items-center justify-between gap-3">
+						<span class="text-slate-300">Most you can give your own picks</span>
+						<input type="number" min="1" value={num(config.max_self_votes)} oninput={(e) => (config.max_self_votes = Math.max(1, num(e.currentTarget.value)))} class="w-20 rounded-lg bg-slate-900 px-2 py-1.5 text-center ring-1 ring-white/10" />
+					</label>
+				{/if}
 			</div>
 		</div>
 

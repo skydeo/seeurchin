@@ -53,8 +53,11 @@ Everything updates in real time via Server-Sent Events — no refreshing.
 | **Score** | Star / score rating | `max_score` (5), `aggregate` (`total`; or `average`), `allow_self_vote` (true) | Rate each title `0..max_score`; ranked by total (or average) score. |
 
 Each method enforces its own ballot rules server-side (vote budgets, per-option
-caps, and whether you may vote for a title you nominated). Nomination rules
-(`min` / `max` / `required`) are enforced independently of the voting method.
+caps, and whether you may vote for a title you nominated). Voting for your own
+picks can be open, disabled, or capped via `max_self_votes` (`<0` unlimited,
+`0` none, `N` at most N — when set it overrides the legacy `allow_self_vote`).
+Nomination rules (`min` / `max` / `required`) are enforced independently of the
+voting method.
 
 ---
 

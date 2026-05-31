@@ -15,7 +15,8 @@ type Ranked struct{}
 
 type rankedConfig struct {
 	AllowSelfVote bool `json:"allow_self_vote"`
-	MaxRanked     int  `json:"max_ranked"` // 0 = no limit on how many may be ranked
+	MaxRanked     int  `json:"max_ranked"`               // 0 = no limit on how many may be ranked
+	MaxSelfVotes  *int `json:"max_self_votes,omitempty"` // nil = use AllowSelfVote; <0 unlimited; 0 none; N cap
 }
 
 func (Ranked) Key() string   { return "ranked" }
@@ -53,7 +54,9 @@ func (Ranked) ValidateBallot(raw json.RawMessage, b Ballot, allIDs, ownIDs []str
 	}
 	all := toSet(allIDs)
 	own := toSet(ownIDs)
+	selfLimit := selfVoteLimit(cfg.AllowSelfVote, cfg.MaxSelfVotes)
 	seenRank := map[int]bool{}
+	selfRanked := 0
 	for id, rank := range b.Selections {
 		if !all[id] {
 			return fmt.Errorf("unknown nomination %q", id)
@@ -65,9 +68,15 @@ func (Ranked) ValidateBallot(raw json.RawMessage, b Ballot, allIDs, ownIDs []str
 			return fmt.Errorf("duplicate rank %d", rank)
 		}
 		seenRank[rank] = true
-		if !cfg.AllowSelfVote && own[id] {
-			return fmt.Errorf("ranking your own nomination is not allowed")
+		if own[id] {
+			selfRanked++
 		}
+	}
+	if selfLimit == 0 && selfRanked > 0 {
+		return fmt.Errorf("ranking your own nomination is not allowed")
+	}
+	if selfLimit > 0 && selfRanked > selfLimit {
+		return fmt.Errorf("rank at most %d of your own nomination(s)", selfLimit)
 	}
 	if cfg.MaxRanked > 0 && len(b.Selections) > cfg.MaxRanked {
 		return fmt.Errorf("rank at most %d nomination(s)", cfg.MaxRanked)

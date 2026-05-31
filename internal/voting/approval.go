@@ -15,6 +15,7 @@ type approvalConfig struct {
 	VotesPerUser      int  `json:"votes_per_user"`
 	MaxVotesPerOption int  `json:"max_votes_per_option"` // 0 = unlimited (still capped by VotesPerUser)
 	AllowSelfVote     bool `json:"allow_self_vote"`
+	MaxSelfVotes      *int `json:"max_self_votes,omitempty"` // nil = use AllowSelfVote; <0 unlimited; 0 none; N cap
 }
 
 func (Approval) Key() string   { return "approval" }
@@ -55,7 +56,8 @@ func (Approval) ValidateBallot(raw json.RawMessage, b Ballot, allIDs, ownIDs []s
 	}
 	all := toSet(allIDs)
 	own := toSet(ownIDs)
-	total := 0
+	selfLimit := selfVoteLimit(cfg.AllowSelfVote, cfg.MaxSelfVotes)
+	total, selfVotes := 0, 0
 	for id, votes := range b.Selections {
 		if votes <= 0 {
 			return fmt.Errorf("vote count for %q must be positive", id)
@@ -63,13 +65,19 @@ func (Approval) ValidateBallot(raw json.RawMessage, b Ballot, allIDs, ownIDs []s
 		if !all[id] {
 			return fmt.Errorf("unknown nomination %q", id)
 		}
-		if !cfg.AllowSelfVote && own[id] {
-			return fmt.Errorf("voting for your own nomination is not allowed")
-		}
 		if cfg.MaxVotesPerOption > 0 && votes > cfg.MaxVotesPerOption {
 			return fmt.Errorf("at most %d vote(s) per option", cfg.MaxVotesPerOption)
 		}
+		if own[id] {
+			selfVotes += votes
+		}
 		total += votes
+	}
+	if selfLimit == 0 && selfVotes > 0 {
+		return fmt.Errorf("voting for your own nomination is not allowed")
+	}
+	if selfLimit > 0 && selfVotes > selfLimit {
+		return fmt.Errorf("at most %d vote(s) on your own nominations", selfLimit)
 	}
 	if total > cfg.VotesPerUser {
 		return fmt.Errorf("at most %d vote(s) total", cfg.VotesPerUser)

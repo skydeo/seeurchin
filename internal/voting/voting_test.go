@@ -61,6 +61,53 @@ func TestApprovalValidateBallot(t *testing.T) {
 	}
 }
 
+func intp(n int) *int { return &n }
+
+func TestSelfVoteLimits(t *testing.T) {
+	all := []string{"A", "B", "C"}
+	own := []string{"A"} // the voter nominated A
+
+	// Approval: cap self-votes at 1 (cumulative budget so >1 on one option is
+	// otherwise legal).
+	apr := cfg(approvalConfig{VotesPerUser: 5, MaxVotesPerOption: 5, AllowSelfVote: true, MaxSelfVotes: intp(1)})
+	if err := (Approval{}).ValidateBallot(apr, ballot(map[string]int{"A": 1}), all, own); err != nil {
+		t.Errorf("1 self-vote within cap rejected: %v", err)
+	}
+	if err := (Approval{}).ValidateBallot(apr, ballot(map[string]int{"A": 2}), all, own); err == nil {
+		t.Error("expected 2 self-votes to exceed cap of 1")
+	}
+	// max_self_votes overrides a legacy allow_self_vote=false (lets you self-vote
+	// up to the cap).
+	override := cfg(approvalConfig{VotesPerUser: 5, MaxVotesPerOption: 5, AllowSelfVote: false, MaxSelfVotes: intp(2)})
+	if err := (Approval{}).ValidateBallot(override, ballot(map[string]int{"A": 2}), all, own); err != nil {
+		t.Errorf("max_self_votes should override allow_self_vote=false: %v", err)
+	}
+	// max_self_votes = 0 means none, even if allow_self_vote is true.
+	none := cfg(approvalConfig{VotesPerUser: 5, MaxVotesPerOption: 5, AllowSelfVote: true, MaxSelfVotes: intp(0)})
+	if err := (Approval{}).ValidateBallot(none, ballot(map[string]int{"A": 1}), all, own); err == nil {
+		t.Error("expected max_self_votes=0 to forbid any self-vote")
+	}
+
+	// Ranked: cap on how many of your own you may rank.
+	rnk := cfg(rankedConfig{MaxSelfVotes: intp(1)})
+	ownTwo := []string{"A", "B"}
+	if err := (Ranked{}).ValidateBallot(rnk, ballot(map[string]int{"A": 1, "B": 2}), all, ownTwo); err == nil {
+		t.Error("expected ranking 2 own nominations to exceed cap of 1")
+	}
+	if err := (Ranked{}).ValidateBallot(rnk, ballot(map[string]int{"A": 1, "C": 2}), all, ownTwo); err != nil {
+		t.Errorf("ranking 1 own nomination within cap rejected: %v", err)
+	}
+
+	// Score: cap on how many of your own you may give a positive score.
+	scr := cfg(scoreConfig{MaxScore: 5, AllowSelfVote: true, Aggregate: "total", MaxSelfVotes: intp(1)})
+	if err := (Score{}).ValidateBallot(scr, ballot(map[string]int{"A": 5, "B": 5}), all, ownTwo); err == nil {
+		t.Error("expected scoring 2 own nominations to exceed cap of 1")
+	}
+	if err := (Score{}).ValidateBallot(scr, ballot(map[string]int{"A": 5, "B": 0}), all, ownTwo); err != nil {
+		t.Errorf("scoring 1 own (other at 0) within cap rejected: %v", err)
+	}
+}
+
 func TestScoreTallyTotalVsAverage(t *testing.T) {
 	all := []string{"A", "B", "C"}
 	ballots := []Ballot{

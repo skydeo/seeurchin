@@ -13,7 +13,8 @@ type Score struct{}
 type scoreConfig struct {
 	MaxScore      int    `json:"max_score"`
 	AllowSelfVote bool   `json:"allow_self_vote"`
-	Aggregate     string `json:"aggregate"` // "total" (default) | "average"
+	Aggregate     string `json:"aggregate"`                // "total" (default) | "average"
+	MaxSelfVotes  *int   `json:"max_self_votes,omitempty"` // nil = use AllowSelfVote; <0 unlimited; 0 none; N cap
 }
 
 func (Score) Key() string   { return "score" }
@@ -57,6 +58,8 @@ func (Score) ValidateBallot(raw json.RawMessage, b Ballot, allIDs, ownIDs []stri
 	}
 	all := toSet(allIDs)
 	own := toSet(ownIDs)
+	selfLimit := selfVoteLimit(cfg.AllowSelfVote, cfg.MaxSelfVotes)
+	selfScored := 0
 	for id, s := range b.Selections {
 		if !all[id] {
 			return fmt.Errorf("unknown nomination %q", id)
@@ -64,9 +67,15 @@ func (Score) ValidateBallot(raw json.RawMessage, b Ballot, allIDs, ownIDs []stri
 		if s < 0 || s > cfg.MaxScore {
 			return fmt.Errorf("score for %q must be between 0 and %d", id, cfg.MaxScore)
 		}
-		if !cfg.AllowSelfVote && own[id] && s > 0 {
-			return fmt.Errorf("scoring your own nomination is not allowed")
+		if own[id] && s > 0 {
+			selfScored++
 		}
+	}
+	if selfLimit == 0 && selfScored > 0 {
+		return fmt.Errorf("scoring your own nomination is not allowed")
+	}
+	if selfLimit > 0 && selfScored > selfLimit {
+		return fmt.Errorf("score at most %d of your own nomination(s)", selfLimit)
 	}
 	return nil
 }

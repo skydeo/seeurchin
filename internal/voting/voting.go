@@ -91,6 +91,27 @@ func init() {
 	Register(Score{})
 }
 
+// selfVoteLimit resolves the effective cap on a voter's support for their own
+// nominations. maxSelfVotes, when present, is authoritative: a negative value
+// means unlimited, 0 means none, and N means at most N. When absent (nil) it
+// falls back to the legacy allow_self_vote bool (true = unlimited, false =
+// none). The returned limit is -1 for unlimited, 0 for none, or a positive cap.
+//
+// "Support" is counted per method: total votes spent (approval), or the number
+// of own nominations ranked (ranked) or scored (score).
+func selfVoteLimit(allowSelfVote bool, maxSelfVotes *int) int {
+	if maxSelfVotes != nil {
+		if *maxSelfVotes < 0 {
+			return -1
+		}
+		return *maxSelfVotes
+	}
+	if allowSelfVote {
+		return -1
+	}
+	return 0
+}
+
 // toSet builds a lookup set from a slice of IDs.
 func toSet(ids []string) map[string]bool {
 	s := make(map[string]bool, len(ids))
