@@ -37,6 +37,7 @@ func (r itemResolver) GetItem(ctx context.Context, id string) (*poll.ResolvedIte
 		Runtime:  it.RuntimeMinutes(),
 		Overview: it.Overview,
 		ImageTag: it.PrimaryImageTag(),
+		Genres:   it.Genres,
 	}, nil
 }
 

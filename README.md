@@ -161,6 +161,7 @@ session cookie obtained from create or join.
 |---|---|---|
 | `GET` | `/api/health` | Liveness check. |
 | `GET` | `/api/methods` | Available voting methods and their default configs. |
+| `GET` | `/api/genres?scope=` | Library genres for a scope (`movie`/`series`/`both`), for the genre picker. |
 | `POST` | `/api/polls` | Create a poll (creator becomes host). Returns the poll view + sets cookie. |
 | `GET` | `/api/polls/{code}` | Poll state, including your participation. |
 | `POST` | `/api/polls/{code}/join` | Join as a guest (`{display_name}`); sets cookie. |
@@ -186,7 +187,8 @@ Create-poll body:
   "allow_guests": true,
   "results_live": false,
   "reveal_nominators": false,        // show who nominated, on the results screen
-  "reveal_scope": "winner"           // "winner" | "all" (when reveal_nominators)
+  "reveal_scope": "winner",          // "winner" | "all" (when reveal_nominators)
+  "genres": []                       // restrict nominations to these genres (empty = any)
 }
 ```
 

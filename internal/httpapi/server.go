@@ -46,6 +46,7 @@ func (s *Server) Routes() http.Handler {
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", s.handleHealth)
 		r.Get("/methods", s.handleMethods)
+		r.Get("/genres", s.handleGenres)
 		r.Post("/polls", s.handleCreatePoll)
 		r.Route("/polls/{code}", func(r chi.Router) {
 			r.Get("/", s.handleGetPoll)

@@ -43,6 +43,23 @@ type createPollReq struct {
 	ResultsLive      bool                 `json:"results_live"`
 	RevealNominators bool                 `json:"reveal_nominators"`
 	RevealScope      string               `json:"reveal_scope"`
+	Genres           []string             `json:"genres"`
+}
+
+// handleGenres lists the library's genres for a scope ("movie" | "series" |
+// "both"), so the create page can offer a genre restriction before a poll
+// exists.
+func (s *Server) handleGenres(w http.ResponseWriter, r *http.Request) {
+	types := scopeTypes(poll.LibraryScope(strings.ToLower(r.URL.Query().Get("scope"))))
+	genres, err := s.jf.ListGenres(r.Context(), types)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	if genres == nil {
+		genres = []string{}
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{"genres": genres})
 }
 
 func (s *Server) handleCreatePoll(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +79,7 @@ func (s *Server) handleCreatePoll(w http.ResponseWriter, r *http.Request) {
 		ResultsLive:      req.ResultsLive,
 		RevealNominators: req.RevealNominators,
 		RevealScope:      req.RevealScope,
+		Genres:           req.Genres,
 	})
 	if err != nil {
 		s.writeErr(w, err)
@@ -152,6 +170,7 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	items, total, err := s.jf.Search(r.Context(), jellyfin.SearchParams{
 		Query:      strings.TrimSpace(r.URL.Query().Get("q")),
 		Types:      types,
+		Genres:     p.Genres,
 		Limit:      limit,
 		StartIndex: start,
 	})

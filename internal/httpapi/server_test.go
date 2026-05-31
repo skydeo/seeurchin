@@ -33,9 +33,9 @@ func newTestServer(t *testing.T) *httptest.Server {
 	t.Cleanup(func() { _ = st.Close() })
 
 	resolver := fakeResolver{items: map[string]*poll.ResolvedItem{
-		"m1": {ID: "m1", Title: "Dune", Type: "Movie", Year: 2021},
-		"m2": {ID: "m2", Title: "Arrival", Type: "Movie", Year: 2016},
-		"m3": {ID: "m3", Title: "Sicario", Type: "Movie", Year: 2015},
+		"m1": {ID: "m1", Title: "Dune", Type: "Movie", Year: 2021, Genres: []string{"Sci-Fi", "Adventure"}},
+		"m2": {ID: "m2", Title: "Arrival", Type: "Movie", Year: 2016, Genres: []string{"Sci-Fi", "Drama"}},
+		"m3": {ID: "m3", Title: "Sicario", Type: "Movie", Year: 2015, Genres: []string{"Thriller", "Crime"}},
 	}}
 	cfg := config.Config{BaseURL: "http://example.test", SessionSecret: []byte("test-secret-test-secret")}
 	svc := poll.NewService(st, resolver, 0)
@@ -264,6 +264,30 @@ func TestRandomPollPicksAndFreezesWinner(t *testing.T) {
 		if again.Results == nil || len(again.Results.Winners) != 1 || again.Results.Winners[0].NominationID != winner {
 			t.Fatalf("winner changed across reads: got %+v, want %s", again.Results, winner)
 		}
+	}
+}
+
+func TestGenreRestrictedNominations(t *testing.T) {
+	ts := newTestServer(t)
+	host := newClient(t)
+
+	var created pollView
+	do(t, host, http.MethodPost, ts.URL+"/api/polls", map[string]any{
+		"title": "Thriller night", "host_name": "Alice", "library_scope": "movie",
+		"voting_method": "approval", "genres": []string{"Thriller"},
+	}, &created)
+	if len(created.Genres) != 1 || created.Genres[0] != "Thriller" {
+		t.Fatalf("poll genres = %v, want [Thriller]", created.Genres)
+	}
+	code := created.Code
+
+	// Dune (Sci-Fi/Adventure) is outside the allowed genre and is rejected.
+	if c := do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/nominations", map[string]string{"item_id": "m1"}, nil); c != http.StatusBadRequest {
+		t.Fatalf("off-genre nominate status = %d, want 400", c)
+	}
+	// Sicario (Thriller/Crime) is allowed.
+	if c := do(t, host, http.MethodPost, ts.URL+"/api/polls/"+code+"/nominations", map[string]string{"item_id": "m3"}, nil); c != http.StatusOK {
+		t.Fatalf("on-genre nominate status = %d, want 200", c)
 	}
 }
 

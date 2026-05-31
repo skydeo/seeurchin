@@ -83,6 +83,9 @@
 		<div>
 			<h2 class="text-lg font-semibold">Nominations</h2>
 			<p class="text-sm text-slate-400">{guidance} · you've added {poll.me?.nomination_count ?? 0}</p>
+			{#if poll.genres.length > 0}
+				<p class="mt-0.5 text-xs text-brand-300">Limited to {poll.genres.join(', ')}</p>
+			{/if}
 		</div>
 		<button
 			onclick={openBrowse}

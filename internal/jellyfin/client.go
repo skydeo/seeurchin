@@ -67,6 +67,7 @@ type Item struct {
 	Overview        string            `json:"Overview"`
 	RunTimeTicks    int64             `json:"RunTimeTicks"`
 	CommunityRating float64           `json:"CommunityRating"`
+	Genres          []string          `json:"Genres"`
 	ImageTags       map[string]string `json:"ImageTags"`
 }
 
@@ -85,6 +86,7 @@ func (it Item) PrimaryImageTag() string { return it.ImageTags["Primary"] }
 type SearchParams struct {
 	Query      string   // free-text search; empty lists everything
 	Types      []string // defaults to Movie + Series
+	Genres     []string // restrict to these genres (OR); empty = any genre
 	Limit      int
 	StartIndex int
 }
@@ -99,13 +101,17 @@ func (c *Client) Search(ctx context.Context, p SearchParams) ([]Item, int, error
 	q := url.Values{}
 	q.Set("Recursive", "true")
 	q.Set("IncludeItemTypes", strings.Join(types, ","))
-	q.Set("Fields", "Overview,ProductionYear,RunTimeTicks,CommunityRating")
+	q.Set("Fields", "Overview,ProductionYear,RunTimeTicks,CommunityRating,Genres")
 	q.Set("SortBy", "SortName")
 	q.Set("SortOrder", "Ascending")
 	q.Set("EnableImageTypes", "Primary")
 	q.Set("ImageTypeLimit", "1")
 	if p.Query != "" {
 		q.Set("SearchTerm", p.Query)
+	}
+	if len(p.Genres) > 0 {
+		// Jellyfin treats the pipe-delimited Genres param as an OR filter.
+		q.Set("Genres", strings.Join(p.Genres, "|"))
 	}
 	if p.Limit > 0 {
 		q.Set("Limit", strconv.Itoa(p.Limit))
@@ -124,12 +130,39 @@ func (c *Client) Search(ctx context.Context, p SearchParams) ([]Item, int, error
 	return out.Items, out.TotalRecordCount, nil
 }
 
+// ListGenres returns the distinct genre names present in the library for the
+// given item types (defaulting to Movie + Series), sorted by name.
+func (c *Client) ListGenres(ctx context.Context, types []string) ([]string, error) {
+	if len(types) == 0 {
+		types = []string{"Movie", "Series"}
+	}
+	q := url.Values{}
+	q.Set("IncludeItemTypes", strings.Join(types, ","))
+	q.Set("SortBy", "SortName")
+	q.Set("SortOrder", "Ascending")
+	var out struct {
+		Items []struct {
+			Name string `json:"Name"`
+		} `json:"Items"`
+	}
+	if err := c.getJSON(ctx, "/Genres", q, &out); err != nil {
+		return nil, err
+	}
+	genres := make([]string, 0, len(out.Items))
+	for _, g := range out.Items {
+		if g.Name != "" {
+			genres = append(genres, g.Name)
+		}
+	}
+	return genres, nil
+}
+
 // GetItem fetches a single item by ID. It returns (nil, nil) if not found.
 func (c *Client) GetItem(ctx context.Context, id string) (*Item, error) {
 	q := url.Values{}
 	q.Set("Ids", id)
 	q.Set("Recursive", "true")
-	q.Set("Fields", "Overview,ProductionYear,RunTimeTicks,CommunityRating")
+	q.Set("Fields", "Overview,ProductionYear,RunTimeTicks,CommunityRating,Genres")
 	q.Set("EnableImageTypes", "Primary")
 	var out struct {
 		Items []Item `json:"Items"`

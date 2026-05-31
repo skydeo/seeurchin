@@ -23,6 +23,7 @@ type pollView struct {
 	ResultsLive       bool                 `json:"results_live"`
 	RevealNominators  bool                 `json:"reveal_nominators"`
 	RevealScope       string               `json:"reveal_scope"`
+	Genres            []string             `json:"genres"`
 	ParticipantCount  int                  `json:"participant_count"`
 	VoterCount        int                  `json:"voter_count"`
 	Nominations       []nominationView     `json:"nominations"`
@@ -102,6 +103,7 @@ func (s *Server) buildPollView(ctx context.Context, p *poll.Poll, me *poll.Parti
 		ResultsLive:       p.ResultsLive,
 		RevealNominators:  p.RevealNominators,
 		RevealScope:       p.RevealScope,
+		Genres:            genresOrEmpty(p.Genres),
 		ParticipantCount:  len(participants),
 		VoterCount:        voterCount,
 		ShareURL:          s.cfg.BaseURL + "/p/" + p.Code,
@@ -172,6 +174,14 @@ func (s *Server) buildPollView(ctx context.Context, p *poll.Poll, me *poll.Parti
 	}
 
 	return view, nil
+}
+
+// genresOrEmpty guarantees a non-nil slice so it serializes as [] not null.
+func genresOrEmpty(g []string) []string {
+	if g == nil {
+		return []string{}
+	}
+	return g
 }
 
 // resultsVisible reports whether tallies may be shown: always once closed, and

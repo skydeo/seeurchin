@@ -26,6 +26,7 @@ type ResolvedItem struct {
 	Runtime  int
 	Overview string
 	ImageTag string
+	Genres   []string
 }
 
 // Error is a service error carrying an HTTP-friendly status code.
@@ -71,6 +72,7 @@ type CreatePollInput struct {
 	ResultsLive      bool
 	RevealNominators bool
 	RevealScope      string
+	Genres           []string // restrict nominations to these genres (empty = any)
 }
 
 // CreatePoll validates input, opens a poll directly into round 1, and creates
@@ -101,6 +103,7 @@ func (s *Service) CreatePoll(ctx context.Context, in CreatePollInput) (*Poll, *P
 	if in.RevealScope != RevealWinner && in.RevealScope != RevealAll {
 		return nil, nil, errBad("invalid reveal scope %q", in.RevealScope)
 	}
+	genres := cleanGenres(in.Genres)
 
 	method, ok := voting.Get(in.VotingMethod)
 	if !ok {
@@ -134,6 +137,7 @@ func (s *Service) CreatePoll(ctx context.Context, in CreatePollInput) (*Poll, *P
 		ResultsLive:      in.ResultsLive,
 		RevealNominators: in.RevealNominators,
 		RevealScope:      in.RevealScope,
+		Genres:           genres,
 	}
 	host := &Participant{
 		ID:           NewID(),
@@ -145,6 +149,44 @@ func (s *Service) CreatePoll(ctx context.Context, in CreatePollInput) (*Poll, *P
 		return nil, nil, err
 	}
 	return p, host, nil
+}
+
+// cleanGenres trims, de-dupes (case-insensitively), and drops empty genre names,
+// preserving the host's order.
+func cleanGenres(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := map[string]bool{}
+	for _, g := range in {
+		g = strings.TrimSpace(g)
+		if g == "" {
+			continue
+		}
+		key := strings.ToLower(g)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, g)
+	}
+	return out
+}
+
+// allowsGenres reports whether an item with the given genres may be nominated in
+// a poll restricted to allowed (empty allowed = no restriction).
+func allowsGenres(allowed, itemGenres []string) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	have := make(map[string]bool, len(itemGenres))
+	for _, g := range itemGenres {
+		have[strings.ToLower(strings.TrimSpace(g))] = true
+	}
+	for _, g := range allowed {
+		if have[strings.ToLower(strings.TrimSpace(g))] {
+			return true
+		}
+	}
+	return false
 }
 
 func validateRules(r SubmissionRules) error {
@@ -225,6 +267,9 @@ func (s *Service) SubmitNomination(ctx context.Context, p *Poll, participant *Pa
 	}
 	if !scopeAllows(p.LibraryScope, item.Type) {
 		return nil, errBad("%ss can't be nominated in this poll", strings.ToLower(item.Type))
+	}
+	if !allowsGenres(p.Genres, item.Genres) {
+		return nil, errBad("this poll only allows: %s", strings.Join(p.Genres, ", "))
 	}
 
 	if max := p.SubmissionRules.effectiveMax(); max > 0 {

@@ -62,6 +62,7 @@ export interface PollView {
 	results_live: boolean;
 	reveal_nominators: boolean;
 	reveal_scope: string;
+	genres: string[];
 	participant_count: number;
 	voter_count: number;
 	nominations: NominationView[];
@@ -97,4 +98,5 @@ export interface CreatePollBody {
 	results_live: boolean;
 	reveal_nominators: boolean;
 	reveal_scope: string;
+	genres: string[];
 }

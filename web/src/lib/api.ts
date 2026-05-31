@@ -17,6 +17,8 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
 
 export const api = {
 	methods: () => req<VotingMethod[]>('GET', '/api/methods'),
+	genres: (scope: string) =>
+		req<{ genres: string[] }>('GET', `/api/genres?scope=${encodeURIComponent(scope)}`),
 	createPoll: (body: CreatePollBody) => req<PollView>('POST', '/api/polls', body),
 	getPoll: (code: string) => req<PollView>('GET', `/api/polls/${code}`),
 	join: (code: string, display_name: string) =>

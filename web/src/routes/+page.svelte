@@ -27,6 +27,9 @@
 	let resultsLive = $state(false);
 	let revealNominators = $state(false);
 	let revealScope = $state('winner');
+	let allGenres = $state<string[]>([]);
+	let selectedGenres = $state<string[]>([]);
+	let genreError = $state('');
 	let creating = $state(false);
 	let error = $state('');
 
@@ -43,6 +46,31 @@
 		method = key;
 		const m = methods.find((x) => x.key === key);
 		config = { ...(m?.default_config ?? {}) } as Record<string, number | boolean | string>;
+	}
+
+	// Load the genre list for the chosen scope. Changing scope resets the
+	// selection, since movie and show genres differ.
+	$effect(() => {
+		const s = scope;
+		let cancelled = false;
+		genreError = '';
+		selectedGenres = [];
+		api
+			.genres(s)
+			.then((res) => {
+				if (!cancelled) allGenres = res.genres;
+			})
+			.catch((err) => {
+				if (!cancelled) genreError = err instanceof Error ? err.message : 'could not load genres';
+			});
+		return () => {
+			cancelled = true;
+		};
+	});
+	function toggleGenre(g: string) {
+		selectedGenres = selectedGenres.includes(g)
+			? selectedGenres.filter((x) => x !== g)
+			: [...selectedGenres, g];
 	}
 
 	async function create(e: Event) {
@@ -65,7 +93,8 @@
 			allow_guests: allowGuests,
 			results_live: resultsLive,
 			reveal_nominators: revealNominators,
-			reveal_scope: revealScope
+			reveal_scope: revealScope,
+			genres: selectedGenres
 		};
 		creating = true;
 		try {
@@ -143,6 +172,23 @@
 				{/each}
 			</div>
 		</div>
+
+		<!-- Genre restriction (optional) -->
+		{#if allGenres.length > 0}
+			<div>
+				<span class="text-sm text-slate-300">Limit to genres <span class="text-slate-500">(optional)</span></span>
+				<div class="mt-1 flex flex-wrap gap-2">
+					{#each allGenres as g (g)}
+						<button type="button" onclick={() => toggleGenre(g)} class="rounded-full px-3 py-1 text-sm {selectedGenres.includes(g) ? 'bg-brand-500 text-white' : 'bg-slate-800 text-slate-300'}">{g}</button>
+					{/each}
+				</div>
+				{#if selectedGenres.length > 0}
+					<p class="mt-1 text-xs text-slate-500">Only {selectedGenres.join(', ')} can be nominated.</p>
+				{/if}
+			</div>
+		{:else if genreError}
+			<p class="text-xs text-slate-500">Genres unavailable ({genreError}).</p>
+		{/if}
 
 		<!-- Submission rules -->
 		<div>
