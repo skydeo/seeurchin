@@ -1,34 +1,353 @@
 @import 'tailwindcss';
 
+/* ============================================================
+   seeurchin · "Reef" theme for Tailwind v4
+   ------------------------------------------------------------
+   Light values live in @theme (Tailwind generates utilities from
+   them: bg-surface, text-ink, text-accent, font-display, …).
+   Dark mode re-declares the SAME --color-* custom properties
+   under [data-theme="dark"]; utilities resolve the cascaded value,
+   so every `bg-surface` / `text-ink` adapts automatically.
+
+   The active theme is set on <html data-theme="…"> by the no-flash
+   script in app.html and the theme store (lib/theme.svelte.ts).
+   ============================================================ */
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @theme {
-	--color-brand-50: #eef5ff;
-	--color-brand-300: #8ab4ff;
-	--color-brand-400: #5d92ff;
-	--color-brand-500: #3b76f6;
-	--color-brand-600: #2a5fe0;
+	--font-sans: 'Nunito', system-ui, sans-serif;
+	--font-display: 'Baloo 2', system-ui, sans-serif; /* wordmark / hero numerals */
+	--font-title: 'Quicksand', system-ui, sans-serif; /* section + control labels */
+
+	/* ---- surfaces & text (LIGHT) ---- */
+	--color-bg: #fdf7ec;          /* sand */
+	--color-bg2: #f6ecd6;
+	--color-surface: #ffffff;     /* cards */
+	--color-surface2: #fbf4e6;    /* raised panels */
+	--color-surface3: #f3ead6;    /* inputs, insets, unselected */
+	--color-line: #ece2cf;
+	--color-line2: #e0d3b6;
+	--color-ink: #143a45;         /* primary text */
+	--color-muted: #50707a;       /* secondary text */
+	--color-faint: #93a4ab;       /* tertiary text */
+
+	/* ---- brand roles ---- */
+	--color-primary: #0e5a7d;     /* ocean — primary actions */
+	--color-primary-deep: #0a3f59;
+	--color-accent: #0f9a92;      /* teal — identity, links, selected accents */
+	--color-accent-ink: #0c7d76;  /* teal text on light */
+	--color-coral: #ff6f5e;       /* host round-advance CTA, "yours" badge */
+	--color-coral-ink: #d64a3a;
+	--color-mango: #ffa23a;       /* stars, "nominating", request badge */
+	--color-sun: #ffce5c;         /* winner celebration */
+	--color-on-primary: #ffffff;  /* text on ocean */
+	--color-on-coral: #3a140d;    /* text on coral */
+
+	/* ---- radii ---- */
+	--radius-sm: 10px;
+	--radius-md: 14px;
+	--radius-lg: 20px;
+	--radius-xl: 26px;
 }
 
-:root {
+/* ---- DARK overrides (same tokens, swapped values) ---- */
+[data-theme='dark'] {
 	color-scheme: dark;
-}
+	--color-bg: #072e3d;          /* deep ocean-ink */
+	--color-bg2: #0a3a4c;
+	--color-surface: #0d4055;
+	--color-surface2: #114a60;
+	--color-surface3: #0a3645;
+	--color-line: rgba(206, 232, 230, 0.12);
+	--color-line2: rgba(206, 232, 230, 0.22);
+	--color-ink: #e9f3f1;
+	--color-muted: #a3c0c5;
+	--color-faint: #6f9298;
 
+	--color-primary: #1d7aa3;     /* brighter ocean for dark */
+	--color-primary-deep: #14628a;
+	--color-accent: #1ccfc3;      /* teal-bright */
+	--color-accent-ink: #3be0d4;
+	--color-coral: #ff7d6d;
+	--color-coral-ink: #ff9e8f;
+	--color-mango: #ffb056;
+	--color-sun: #ffd76e;
+	--color-on-primary: #ffffff;
+	--color-on-coral: #2a0f0a;
+}
+[data-theme='light'] { color-scheme: light; }
+
+/* ============================================================
+   Base
+   ============================================================ */
 html,
 body {
 	min-height: 100%;
 }
-
 body {
+	font-family: var(--font-sans);
 	background:
-		radial-gradient(1200px 600px at 80% -10%, rgba(59, 118, 246, 0.12), transparent 60%),
-		radial-gradient(900px 500px at -10% 10%, rgba(124, 58, 237, 0.1), transparent 55%), #020617;
-	color: #e2e8f0;
+		radial-gradient(900px 520px at 88% -8%, color-mix(in srgb, var(--color-accent) 14%, transparent), transparent 60%),
+		radial-gradient(760px 480px at -6% 8%, color-mix(in srgb, var(--color-coral) 9%, transparent), transparent 55%),
+		var(--color-bg);
+	color: var(--color-ink);
 	-webkit-font-smoothing: antialiased;
-	text-rendering: optimizelegibility;
+	text-rendering: optimizeLegibility;
+	transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Hide number input spinners for a cleaner look. */
+/* Hide number-input spinners for a cleaner look. */
 input[type='number']::-webkit-inner-spin-button,
 input[type='number']::-webkit-outer-spin-button {
 	appearance: none;
 	margin: 0;
 }
+
+/* ============================================================
+   Component layer — the reusable design-system primitives.
+   Use these class names in markup; they read the semantic tokens
+   above, so they're theme-aware for free.
+   ============================================================ */
+@layer components {
+	/* ---- buttons ---- */
+	.btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.45rem;
+		border: none;
+		border-radius: var(--radius-md);
+		font-weight: 800;
+		font-size: 0.95rem;
+		line-height: 1;
+		padding: 0.8rem 1.1rem;
+		transition: transform 0.06s ease, background 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
+		cursor: pointer;
+	}
+	.btn:active { transform: translateY(1px); }
+	.btn:disabled { cursor: default; }
+
+	.btn-primary { background: var(--color-primary); color: var(--color-on-primary); box-shadow: 0 1px 2px rgba(20, 58, 69, 0.08); }
+	.btn-primary:hover { background: var(--color-primary-deep); }
+	.btn-primary:disabled { opacity: 0.4; }
+
+	.btn-coral { background: var(--color-coral); color: var(--color-on-coral); box-shadow: 0 8px 20px -10px var(--color-coral); }
+	.btn-coral:hover { filter: brightness(0.96); }
+	.btn-coral:disabled { opacity: 0.45; box-shadow: none; }
+
+	.btn-ghost { background: var(--color-surface3); color: var(--color-muted); font-weight: 700; }
+	.btn-ghost:hover { color: var(--color-ink); }
+
+	.btn-sm { padding: 0.55rem 0.85rem; font-size: 0.85rem; border-radius: var(--radius-sm); }
+
+	/* ---- inputs ---- */
+	.input {
+		width: 100%;
+		border-radius: var(--radius-md);
+		background: var(--color-surface);
+		border: 1.5px solid var(--color-line);
+		color: var(--color-ink);
+		padding: 0.72rem 0.9rem;
+		font-size: 0.95rem;
+		font-weight: 600;
+		outline: none;
+		transition: border-color 0.15s ease, box-shadow 0.15s ease;
+	}
+	.input::placeholder { color: var(--color-faint); font-weight: 600; }
+	.input:focus { border-color: var(--color-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent); }
+	.input-code {
+		text-align: center;
+		text-transform: uppercase;
+		letter-spacing: 0.28em;
+		font-family: var(--font-title);
+		font-weight: 700;
+		font-size: 1.1rem;
+	}
+	.select {
+		border-radius: var(--radius-sm);
+		background: var(--color-surface);
+		border: 1.5px solid var(--color-line);
+		color: var(--color-ink);
+		padding: 0.5rem 0.6rem;
+		font-size: 0.85rem;
+		font-weight: 700;
+		outline: none;
+	}
+	.select:focus { border-color: var(--color-accent); }
+
+	/* ---- cards / panels ---- */
+	.card {
+		background: var(--color-surface);
+		border: 1px solid var(--color-line);
+		border-radius: var(--radius-lg);
+		box-shadow: 0 1px 2px rgba(20, 58, 69, 0.05);
+	}
+	.panel {
+		background: var(--color-surface2);
+		border: 1px solid var(--color-line);
+		border-radius: var(--radius-md);
+	}
+
+	/* ---- segmented options & chips ---- */
+	.opt {
+		border: 1.5px solid var(--color-line);
+		background: var(--color-surface);
+		color: var(--color-muted);
+		border-radius: var(--radius-md);
+		padding: 0.65rem 0.6rem;
+		font-size: 0.85rem;
+		font-weight: 800;
+		text-align: center;
+		transition: all 0.14s ease;
+		cursor: pointer;
+	}
+	.opt:hover { border-color: var(--color-line2); }
+	.opt[aria-pressed='true'],
+	.opt.is-on {
+		background: var(--color-primary);
+		border-color: var(--color-primary);
+		color: var(--color-on-primary);
+	}
+	.chip {
+		border: 1.5px solid var(--color-line);
+		background: var(--color-surface);
+		color: var(--color-muted);
+		border-radius: 999px;
+		padding: 0.35rem 0.8rem;
+		font-size: 0.82rem;
+		font-weight: 700;
+		transition: all 0.14s ease;
+		cursor: pointer;
+	}
+	.chip:hover { border-color: var(--color-line2); }
+	.chip[aria-pressed='true'],
+	.chip.is-on {
+		background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+		border-color: var(--color-accent);
+		color: var(--color-accent-ink);
+	}
+
+	/* ---- toggle switch ---- */
+	.switch {
+		position: relative;
+		width: 2.9rem;
+		height: 1.7rem;
+		border-radius: 999px;
+		background: var(--color-surface3);
+		border: 1.5px solid var(--color-line2);
+		flex-shrink: 0;
+		transition: background 0.18s ease, border-color 0.18s ease;
+		cursor: pointer;
+	}
+	.switch::after {
+		content: '';
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		width: 1.2rem;
+		height: 1.2rem;
+		border-radius: 999px;
+		background: #fff;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+		transition: transform 0.18s ease;
+	}
+	.switch[aria-checked='true'] { background: var(--color-accent); border-color: var(--color-accent); }
+	.switch[aria-checked='true']::after { transform: translateX(1.2rem); }
+
+	/* ---- status pill ---- */
+	.pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.25rem 0.65rem;
+		border-radius: 999px;
+		font-size: 0.72rem;
+		font-weight: 800;
+		font-family: var(--font-title);
+		letter-spacing: 0.04em;
+	}
+	.pill::before { content: ''; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+	.pill-round1 { background: color-mix(in srgb, var(--color-mango) 16%, transparent); color: var(--color-mango); }
+	.pill-round2 { background: color-mix(in srgb, var(--color-accent) 16%, transparent); color: var(--color-accent-ink); }
+	.pill-closed { background: color-mix(in srgb, var(--color-sun) 20%, transparent); color: #b8841a; }
+	.pill-draft  { background: var(--color-surface3); color: var(--color-muted); }
+	[data-theme='dark'] .pill-closed { color: var(--color-sun); }
+
+	/* ---- poster ---- */
+	.poster {
+		position: relative;
+		aspect-ratio: 2 / 3;
+		border-radius: var(--radius-md);
+		overflow: hidden;
+		background: var(--color-surface3);
+		box-shadow: 0 1px 2px rgba(20, 58, 69, 0.06);
+	}
+	.poster-fallback {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: flex-end;
+		padding: 0.55rem;
+		color: #fff;
+		font-family: var(--font-title);
+		font-weight: 700;
+		font-size: 0.78rem;
+		line-height: 1.18;
+		text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+	}
+	.poster-fallback::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0 9px, rgba(0, 0, 0, 0.05) 9px 18px);
+	}
+
+	/* poster badges */
+	.badge {
+		position: absolute;
+		padding: 0.18rem 0.45rem;
+		border-radius: 999px;
+		font-size: 0.62rem;
+		font-weight: 800;
+		letter-spacing: 0.03em;
+		font-family: var(--font-title);
+		z-index: 2;
+		box-shadow: 0 1px 2px rgba(20, 58, 69, 0.18);
+	}
+	.badge-yours { top: 0.45rem; right: 0.45rem; background: var(--color-coral); color: #fff; }
+	.badge-count { top: 0.45rem; left: 0.45rem; background: rgba(10, 24, 30, 0.62); color: #fff; }
+	.badge-req { bottom: 0.45rem; left: 0.45rem; background: var(--color-mango); color: #3a230a; }
+
+	.poster-pick {
+		position: absolute;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		z-index: 2;
+	}
+	.poster-pick-on { background: color-mix(in srgb, var(--color-accent) 42%, transparent); box-shadow: inset 0 0 0 3px var(--color-accent); }
+	.poster-pick-lib { background: rgba(8, 20, 26, 0.55); }
+	.poster-pick .tag { padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 0.75rem; font-weight: 800; font-family: var(--font-title); }
+	.poster-pick-on .tag { background: var(--color-accent); color: #fff; }
+	.poster-pick-lib .tag { background: rgba(255, 255, 255, 0.18); color: #fff; }
+
+	/* ---- results bar ---- */
+	.bar { height: 0.55rem; border-radius: 999px; background: var(--color-surface3); overflow: hidden; }
+	.bar > i { display: block; height: 100%; border-radius: 999px; background: var(--color-line2); }
+	.bar-win > i { background: linear-gradient(90deg, var(--color-accent), var(--color-mango)); }
+
+	/* ---- winner card pop (enhancement only — never gates visibility) ---- */
+	.winner-pop { animation: winner-pop 0.5s cubic-bezier(0.18, 0.8, 0.3, 1.25) both; }
+	@keyframes winner-pop {
+		0% { transform: scale(0.93) translateY(5px); }
+		55% { transform: scale(1.025); }
+		100% { transform: none; }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.winner-pop { animation: none; }
+	}
+}
+
+/* utility: confetti canvas overlay (sized + positioned in JS) */
+.confetti-canvas { position: absolute; inset: 0; pointer-events: none; z-index: 60; }

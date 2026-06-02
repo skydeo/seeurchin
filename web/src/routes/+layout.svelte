@@ -1,9 +1,13 @@
 <script lang="ts">
 	import './layout.css';
-	import favicon from '$lib/assets/favicon.svg';
+	import { theme } from '$lib/theme.svelte';
+
+	// Instantiate the theme store so the system-preference listener is active.
+	// (The no-flash script in app.html has already set data-theme for first paint;
+	//  favicons/manifest are declared there too.)
+	void theme;
 
 	let { children } = $props();
 </script>
 
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
 {@render children()}
