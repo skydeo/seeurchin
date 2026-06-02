@@ -11,7 +11,10 @@
 	}: { poll: PollView; code: string; update: (p: PollView) => void } = $props();
 
 	const method = poll.voting_method;
-	const cfg = poll.voting_config as Record<string, number | boolean>;
+	// voting_config can be null (e.g. a poll created via the API without one);
+	// fall back to an empty object so the per-method reads below use defaults
+	// instead of throwing on a null deref.
+	const cfg = (poll.voting_config ?? {}) as Record<string, number | boolean>;
 	const allowSelf = cfg.allow_self_vote !== false;
 	const noms = $derived(poll.nominations);
 	const isHost = $derived(poll.me?.is_host ?? false);
