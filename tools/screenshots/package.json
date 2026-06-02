@@ -1,0 +1,13 @@
+{
+  "name": "seeurchin-screenshots",
+  "private": true,
+  "type": "module",
+  "description": "Drives a running seeurchin instance to capture the README screenshots.",
+  "scripts": {
+    "shoot": "node shoot.mjs",
+    "debug": "node debug.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.60.0"
+  }
+}

@@ -84,6 +84,17 @@ picks can be open, disabled, or capped via `max_self_votes` (`<0` unlimited,
 Nomination rules (`min` / `max` / `required`) are enforced independently of the
 voting method.
 
+Each method renders its own ballot:
+
+<table align="center">
+<tr>
+<td align="center"><img src="docs/screenshots/vote.png" width="185" alt="Approval ballot" /><br /><sub><b>Approval / N votes</b></sub></td>
+<td align="center"><img src="docs/screenshots/vote-ranked.png" width="185" alt="Ranked-choice ballot" /><br /><sub><b>Ranked-choice (IRV)</b></sub></td>
+<td align="center"><img src="docs/screenshots/vote-score.png" width="185" alt="Star / score ballot" /><br /><sub><b>Star / score rating</b></sub></td>
+<td align="center"><img src="docs/screenshots/random.png" width="185" alt="Random pick result" /><br /><sub><b>Random pick</b> <sup>(no ballot — winner drawn)</sup></sub></td>
+</tr>
+</table>
+
 ---
 
 ## Quick start (Docker)
@@ -245,8 +256,8 @@ a pick. The wordmark is lowercase **Baloo 2**.
 
 <table align="center">
 <tr>
-<td align="center"><img src="docs/screenshots/results.png" width="220" alt="Results, light theme" /><br /><sub><b>Light</b></sub></td>
-<td align="center"><img src="docs/screenshots/results-dark.png" width="220" alt="Results, dark theme" /><br /><sub><b>Dark</b></sub></td>
+<td align="center"><img src="docs/screenshots/results.png" width="220" alt="Results, dark theme" /><br /><sub><b>Dark</b></sub></td>
+<td align="center"><img src="docs/screenshots/results-light.png" width="220" alt="Results, light theme" /><br /><sub><b>Light</b></sub></td>
 </tr>
 </table>
 

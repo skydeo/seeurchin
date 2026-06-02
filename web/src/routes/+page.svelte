@@ -32,6 +32,7 @@
 	let allGenres = $state<string[]>([]);
 	let selectedGenres = $state<string[]>([]);
 	let genreError = $state('');
+	let showGenres = $state(false); // genre picker is collapsed by default
 	let seerrEnabled = $state(false);
 	let allowWriteins = $state(true);
 	let autoRequestWinner = $state(true);
@@ -205,15 +206,28 @@
 			</div>
 		</div>
 
-		<!-- Genre restriction (optional) -->
+		<!-- Genre restriction (optional) — collapsed behind a disclosure toggle -->
 		{#if allGenres.length > 0}
 			<div>
-				<span class="mb-1.5 block text-sm font-bold text-muted">Limit to genres <span class="text-faint">(optional)</span></span>
-				<div class="flex flex-wrap gap-2">
-					{#each allGenres as g (g)}
-						<button type="button" onclick={() => toggleGenre(g)} class="chip" class:is-on={selectedGenres.includes(g)}>{g}</button>
-					{/each}
-				</div>
+				<button
+					type="button"
+					onclick={() => (showGenres = !showGenres)}
+					aria-expanded={showGenres}
+					class="flex w-full items-center justify-between gap-3 py-1 text-left"
+				>
+					<span class="text-sm font-bold text-muted">
+						Limit to genres <span class="text-faint">(optional)</span>
+						{#if selectedGenres.length > 0}<span class="font-bold text-accent"> · {selectedGenres.length} selected</span>{/if}
+					</span>
+					<span class="text-faint transition-transform duration-150" class:rotate-180={showGenres} aria-hidden="true">▾</span>
+				</button>
+				{#if showGenres}
+					<div class="mt-2 flex flex-wrap gap-2">
+						{#each allGenres as g (g)}
+							<button type="button" onclick={() => toggleGenre(g)} class="chip" class:is-on={selectedGenres.includes(g)}>{g}</button>
+						{/each}
+					</div>
+				{/if}
 				{#if selectedGenres.length > 0}
 					<p class="mt-2 text-xs font-semibold text-faint">Only {selectedGenres.join(', ')} can be nominated.</p>
 				{/if}

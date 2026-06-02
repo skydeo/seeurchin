@@ -1,0 +1,14 @@
+import { chromium } from 'playwright';
+const ORIGIN = 'http://localhost:5858';
+const code = process.argv[2] || 'CPZ0D2';
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+const page = await ctx.newPage();
+page.on('console', (m) => console.log('  [console.' + m.type() + ']', m.text()));
+page.on('pageerror', (e) => console.log('  [pageerror]', e.message));
+page.on('requestfailed', (r) => console.log('  [reqfailed]', r.url(), r.failure()?.errorText));
+await page.goto(`${ORIGIN}/p/${code}`, { waitUntil: 'domcontentloaded' });
+await new Promise((r) => setTimeout(r, 9000));
+console.log('--- main innerText ---');
+console.log((await page.locator('main').innerText()).slice(0, 400));
+await browser.close();
