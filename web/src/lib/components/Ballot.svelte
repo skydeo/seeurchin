@@ -104,52 +104,52 @@
 <section class="space-y-5">
 	<div class="flex items-start justify-between gap-3">
 		<div>
-			<h2 class="text-lg font-semibold">Cast your vote</h2>
+			<h2 class="font-title text-lg font-bold text-ink">Cast your vote</h2>
 			{#if poll.me?.has_voted}
-				<p class="text-sm text-emerald-400">✓ You've voted — change it anytime before it closes.</p>
+				<p class="mt-0.5 text-[13px] font-bold text-accent-ink">✓ You've voted — change it anytime before it closes.</p>
 			{:else if method === 'approval'}
-				<p class="text-sm text-slate-400">
+				<p class="mt-0.5 text-[13px] font-semibold text-muted">
 					{maxPer === 1 ? `Choose up to ${votesPerUser}` : `You have ${votesPerUser} votes`} ·
-					<span class:text-amber-300={remaining === 0}>{remaining} left</span>
+					<span class="font-extrabold" class:text-mango={remaining === 0}>{remaining} left</span>
 				</p>
 			{:else if method === 'ranked'}
-				<p class="text-sm text-slate-400">Tap titles to rank them, best first.</p>
+				<p class="mt-0.5 text-[13px] font-semibold text-muted">Tap titles to rank them, best first.</p>
 			{:else}
-				<p class="text-sm text-slate-400">Rate each title up to {maxScore}.</p>
+				<p class="mt-0.5 text-[13px] font-semibold text-muted">Rate each title up to {maxScore}.</p>
 			{/if}
 		</div>
 	</div>
 
-	{#if error}<p class="text-sm text-rose-400">{error}</p>{/if}
+	{#if error}<p class="text-sm font-semibold text-coral-ink">{error}</p>{/if}
 
 	{#if method === 'ranked'}
 		<!-- Ranked-choice: ordered picks then the rest. -->
 		{#if ranking.length > 0}
 			<ol class="space-y-2">
 				{#each ranking as id, i (id)}
-					<li class="flex items-center gap-3 rounded-xl bg-slate-900/70 p-2 ring-1 ring-white/10">
-						<span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-500 text-sm font-bold text-white">{i + 1}</span>
-						<span class="flex-1 truncate text-sm font-medium">{titleOf(id)}</span>
+					<li class="flex items-center gap-3 rounded-[14px] border border-line bg-surface p-2 shadow-sm">
+						<span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary text-sm font-bold text-on-primary">{i + 1}</span>
+						<span class="flex-1 truncate text-sm font-bold text-ink">{titleOf(id)}</span>
 						<div class="flex items-center gap-1">
-							<button onclick={() => moveRank(i, -1)} disabled={i === 0} class="rounded-lg bg-slate-800 px-2 py-1 text-slate-300 disabled:opacity-30">↑</button>
-							<button onclick={() => moveRank(i, 1)} disabled={i === ranking.length - 1} class="rounded-lg bg-slate-800 px-2 py-1 text-slate-300 disabled:opacity-30">↓</button>
-							<button onclick={() => removeRank(id)} class="rounded-lg bg-slate-800 px-2 py-1 text-rose-300">✕</button>
+							<button onclick={() => moveRank(i, -1)} disabled={i === 0} class="grid h-[30px] w-[30px] place-items-center rounded-lg border-[1.5px] border-line bg-surface3 font-bold text-muted disabled:opacity-30">↑</button>
+							<button onclick={() => moveRank(i, 1)} disabled={i === ranking.length - 1} class="grid h-[30px] w-[30px] place-items-center rounded-lg border-[1.5px] border-line bg-surface3 font-bold text-muted disabled:opacity-30">↓</button>
+							<button onclick={() => removeRank(id)} class="grid h-[30px] w-[30px] place-items-center rounded-lg border-[1.5px] border-line bg-surface3 font-bold text-coral-ink">✕</button>
 						</div>
 					</li>
 				{/each}
 			</ol>
 		{/if}
 		{#if maxRanked > 0}
-			<p class="text-xs text-slate-500">Rank up to {maxRanked}.</p>
+			<p class="text-xs font-semibold text-faint">Rank up to {maxRanked}.</p>
 		{/if}
 		{#if unranked.length > 0}
 			<div>
-				<h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Tap to add</h3>
+				<h3 class="mb-2 font-title text-xs font-bold uppercase tracking-[0.12em] text-faint">Tap to add</h3>
 				<div class="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
 					{#each unranked as n (n.id)}
-						<button onclick={() => addRank(n.id)} class="text-left">
+						<button onclick={() => addRank(n.id)} class="min-w-0 text-left">
 							<PosterImage itemId={n.item_id} tag={n.image_tag} title={n.title} />
-							<p class="mt-1 truncate text-xs font-medium">{n.title}</p>
+							<p class="mt-1.5 truncate text-[13px] font-bold text-ink">{n.title}</p>
 						</button>
 					{/each}
 				</div>
@@ -161,41 +161,39 @@
 			{#each noms as n (n.id)}
 				{@const mine = n.mine_nominated}
 				{@const blocked = selfBlocked(mine)}
-				<div class="flex items-center gap-3 rounded-xl bg-slate-900/70 p-2.5 ring-1 ring-white/10 {blocked ? 'opacity-50' : ''}">
+				<div class="flex items-center gap-3 rounded-[14px] border border-line bg-surface p-2.5 shadow-sm {blocked ? 'opacity-50' : ''}">
 					<div class="h-16 w-11 shrink-0 overflow-hidden rounded-md">
 						<PosterImage itemId={n.item_id} tag={n.image_tag} title={n.title} />
 					</div>
 					<div class="min-w-0 flex-1">
-						<p class="truncate text-sm font-medium">{n.title}</p>
-						<p class="text-xs text-slate-500">
+						<p class="truncate text-sm font-bold text-ink">{n.title}</p>
+						<p class="text-xs font-semibold text-faint">
 							{n.year || ''}{mine ? ' · your nomination' : ''}
 						</p>
 					</div>
 
 					{#if blocked}
-						<span class="text-xs text-slate-500">can't self-vote</span>
+						<span class="text-xs font-semibold text-faint">can't self-vote</span>
 					{:else if method === 'approval'}
 						{#if maxPer === 1}
 							<button
 								onclick={() => bumpApproval(n.id, (selections[n.id] ?? 0) > 0 ? -1 : 1, mine)}
-								class="rounded-lg px-3 py-2 text-sm font-semibold {(selections[n.id] ?? 0) > 0 ? 'bg-brand-500 text-white' : 'bg-slate-800 text-slate-300'}"
+								class="rounded-[10px] border-[1.5px] px-3.5 py-2.5 text-[13px] font-extrabold transition {(selections[n.id] ?? 0) > 0 ? 'border-accent bg-accent text-white' : 'border-line bg-surface3 text-muted'}"
 							>
 								{(selections[n.id] ?? 0) > 0 ? '✓ Picked' : 'Pick'}
 							</button>
 						{:else}
 							<div class="flex items-center gap-2">
-								<button onclick={() => bumpApproval(n.id, -1, mine)} class="h-8 w-8 rounded-lg bg-slate-800 text-lg leading-none text-slate-300">−</button>
-								<span class="w-5 text-center text-sm font-semibold">{selections[n.id] ?? 0}</span>
-								<button onclick={() => bumpApproval(n.id, 1, mine)} class="h-8 w-8 rounded-lg bg-slate-800 text-lg leading-none text-slate-300">+</button>
+								<button onclick={() => bumpApproval(n.id, -1, mine)} class="grid h-8 w-8 place-items-center rounded-lg border-[1.5px] border-line bg-surface3 text-lg leading-none font-bold text-ink">−</button>
+								<span class="w-5 text-center text-sm font-extrabold text-ink">{selections[n.id] ?? 0}</span>
+								<button onclick={() => bumpApproval(n.id, 1, mine)} class="grid h-8 w-8 place-items-center rounded-lg border-[1.5px] border-line bg-surface3 text-lg leading-none font-bold text-ink">+</button>
 							</div>
 						{/if}
 					{:else}
 						<!-- score: stars -->
 						<div class="flex items-center gap-0.5">
 							{#each Array(maxScore) as _, i (i)}
-								<button onclick={() => setScore(n.id, i + 1, mine)} class="text-xl leading-none">
-									<span class={(selections[n.id] ?? 0) >= i + 1 ? 'text-amber-400' : 'text-slate-600'}>★</span>
-								</button>
+								<button onclick={() => setScore(n.id, i + 1, mine)} class="p-0.5 text-[22px] leading-none {(selections[n.id] ?? 0) >= i + 1 ? 'text-mango' : 'text-line2'}">★</button>
 							{/each}
 						</div>
 					{/if}
@@ -204,11 +202,7 @@
 		</div>
 	{/if}
 
-	<button
-		onclick={submit}
-		disabled={busy}
-		class="w-full rounded-xl bg-brand-500 px-4 py-3 font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
-	>
+	<button onclick={submit} disabled={busy} class="btn btn-primary w-full">
 		{busy ? 'Saving…' : poll.me?.has_voted ? 'Update my vote' : 'Submit vote'}
 	</button>
 
@@ -217,12 +211,9 @@
 	{/if}
 
 	{#if isHost}
-		<div class="rounded-2xl bg-slate-900/70 p-4 ring-1 ring-white/10">
-			<p class="text-sm text-slate-400">{poll.voter_count} of {poll.participant_count} have voted.</p>
-			<button
-				onclick={async () => update(await api.advance(code))}
-				class="mt-3 w-full rounded-xl bg-emerald-500 px-4 py-3 font-semibold text-white hover:bg-emerald-600"
-			>
+		<div class="rounded-[20px] border border-line bg-surface2 p-4">
+			<p class="text-[13px] font-semibold text-muted">{poll.voter_count} of {poll.participant_count} have voted.</p>
+			<button onclick={async () => update(await api.advance(code))} class="btn btn-coral mt-3 w-full">
 				Reveal results & close →
 			</button>
 		</div>

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { PollView } from '$lib/types';
+	import UrchinMark from './UrchinMark.svelte';
+	import ThemeToggle from './ThemeToggle.svelte';
 
 	let { poll }: { poll: PollView } = $props();
 
@@ -18,11 +20,11 @@
 		round2: 'Voting',
 		closed: 'Results'
 	};
-	const statusColor: Record<string, string> = {
-		draft: 'bg-slate-500/20 text-slate-300',
-		round1: 'bg-amber-500/20 text-amber-300',
-		round2: 'bg-brand-500/20 text-brand-300',
-		closed: 'bg-emerald-500/20 text-emerald-300'
+	const statusClass: Record<string, string> = {
+		draft: 'pill-draft',
+		round1: 'pill-round1',
+		round2: 'pill-round2',
+		closed: 'pill-closed'
 	};
 
 	async function copyLink() {
@@ -53,26 +55,38 @@
 </script>
 
 <header class="mb-6">
-	<a href="/" class="text-sm text-slate-400 hover:text-slate-200">← seeurchin</a>
-	<div class="mt-1 flex flex-wrap items-center gap-3">
-		<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{poll.title}</h1>
-		<span class="rounded-full px-2.5 py-1 text-xs font-semibold {statusColor[poll.status]}">
-			{statusLabel[poll.status]}
-		</span>
+	<div class="flex items-center justify-between gap-3">
+		<a href="/" class="inline-flex items-center gap-1.5 text-sm font-bold text-accent hover:opacity-80">
+			<span>←</span>
+			<UrchinMark size={17} />
+			<span class="font-display text-[15px] font-semibold tracking-tight">seeurchin</span>
+		</a>
+		<ThemeToggle />
 	</div>
-	<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-400">
+
+	<div class="mt-3 flex items-center gap-2.5">
+		<h1 class="font-display text-2xl font-semibold tracking-tight text-ink sm:text-[28px]">{poll.title}</h1>
+		<span class="pill {statusClass[poll.status]}">{statusLabel[poll.status]}</span>
+	</div>
+
+	<div class="mt-2.5">
 		<button
 			onclick={copyLink}
-			class="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-2.5 py-1 font-mono text-slate-200 ring-1 ring-white/10 hover:bg-slate-700"
+			class="inline-flex items-center gap-2 rounded-[10px] border border-line bg-surface3 px-2.5 py-1.5 text-ink"
 			title="Copy share link"
 		>
-			<span class="tracking-widest">{poll.code}</span>
-			<span class="text-xs text-slate-400">{copied ? '✓ copied' : 'copy link'}</span>
+			<span class="font-title font-bold tracking-[0.16em]">{poll.code}</span>
+			<span class="text-xs font-bold text-accent">{copied ? '✓ copied' : 'copy link'}</span>
 		</button>
+	</div>
+
+	<div class="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] font-semibold text-muted">
 		<span>{poll.participant_count} {poll.participant_count === 1 ? 'person' : 'people'}</span>
 		{#if poll.status !== 'round1'}
+			<span class="text-faint">·</span>
 			<span>{poll.voter_count} voted</span>
 		{/if}
-		<span class="text-slate-500">{poll.voting_method_label}</span>
+		<span class="text-faint">·</span>
+		<span>{poll.voting_method_label}</span>
 	</div>
 </header>

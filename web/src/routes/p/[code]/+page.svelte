@@ -43,11 +43,11 @@
 
 <main class="mx-auto max-w-3xl px-4 py-6">
 	{#if loading}
-		<p class="py-20 text-center text-slate-400">Loading…</p>
+		<p class="py-20 text-center font-semibold text-muted">Loading…</p>
 	{:else if error}
 		<div class="py-20 text-center">
-			<p class="text-rose-400">{error}</p>
-			<a href="/" class="mt-4 inline-block text-brand-300 hover:underline">← Back home</a>
+			<p class="font-semibold text-coral-ink">{error}</p>
+			<a href="/" class="mt-4 inline-block font-bold text-accent hover:underline">← Back home</a>
 		</div>
 	{:else if poll}
 		<PollHeader {poll} />

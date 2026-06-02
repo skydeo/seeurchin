@@ -3,6 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
 	import type { VotingMethod, CreatePollBody } from '$lib/types';
+	import UrchinMark from '$lib/components/UrchinMark.svelte';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
 	// --- join by code ---
 	let joinCode = $state('');
@@ -134,51 +136,71 @@
 		else if (mode === 'none') config.max_self_votes = 0;
 		else config.max_self_votes = Math.max(1, num(config.max_self_votes) || 1);
 	}
+
+	const scopeOpts: [string, string][] = [
+		['both', 'Movies & Shows'],
+		['movie', 'Movies'],
+		['series', 'Shows']
+	];
+	const ruleOpts: [string, string][] = [
+		['open', 'Any'],
+		['range', 'A range'],
+		['exact', 'Exactly']
+	];
 </script>
 
 <svelte:head><title>seeurchin — group movie night picker</title></svelte:head>
 
-<main class="mx-auto max-w-2xl px-4 py-10">
-	<div class="text-center">
-		<h1 class="text-4xl font-bold tracking-tight">🌊🦔 seeurchin</h1>
-		<p class="mt-2 text-slate-400">Pick what to watch, together. Nominate, then vote.</p>
+<main class="mx-auto max-w-2xl px-4 py-8">
+	<div class="relative">
+		<div class="absolute right-0 top-0"><ThemeToggle /></div>
+		<div class="pt-1 text-center">
+			<div class="flex items-center justify-center gap-2.5">
+				<UrchinMark size={40} />
+				<span class="font-display text-3xl font-semibold tracking-tight text-ink">seeurchin</span>
+			</div>
+			<p class="mt-3 text-[15px] font-semibold text-muted text-pretty">
+				Pick what to watch, together.<br />Nominate, then vote — no accounts needed.
+			</p>
+		</div>
 	</div>
 
 	<!-- Join -->
-	<form onsubmit={join} class="mx-auto mt-8 flex max-w-sm gap-2">
+	<form onsubmit={join} class="mx-auto mt-7 flex max-w-sm gap-2">
 		<input
 			bind:value={joinCode}
-			placeholder="Enter a poll code"
+			placeholder="POLL CODE"
+			maxlength="6"
 			autocomplete="off"
-			class="w-full rounded-xl bg-slate-800 px-4 py-3 text-center text-lg uppercase tracking-widest ring-1 ring-white/10 outline-none focus:ring-2 focus:ring-brand-500"
+			class="input input-code flex-1"
 		/>
-		<button type="submit" class="rounded-xl bg-slate-700 px-5 py-3 font-semibold hover:bg-slate-600">Join</button>
+		<button type="submit" class="btn btn-ghost px-5">Join</button>
 	</form>
 
-	<div class="my-8 flex items-center gap-4 text-xs uppercase tracking-wide text-slate-600">
-		<div class="h-px flex-1 bg-white/10"></div>
+	<div class="my-7 flex items-center gap-3.5 text-[11px] font-bold uppercase tracking-[0.12em] text-faint font-title">
+		<div class="h-px flex-1 bg-line2"></div>
 		or start a new poll
-		<div class="h-px flex-1 bg-white/10"></div>
+		<div class="h-px flex-1 bg-line2"></div>
 	</div>
 
 	<!-- Create -->
-	<form onsubmit={create} class="space-y-5 rounded-2xl bg-slate-900/70 p-5 ring-1 ring-white/10 sm:p-6">
+	<form onsubmit={create} class="card space-y-5 p-5 sm:p-6">
 		<div class="grid gap-4 sm:grid-cols-2">
 			<label class="block">
-				<span class="text-sm text-slate-300">Poll name</span>
-				<input bind:value={title} required placeholder="Friday movie night" class="mt-1 w-full rounded-xl bg-slate-800 px-3 py-2.5 ring-1 ring-white/10 outline-none focus:ring-2 focus:ring-brand-500" />
+				<span class="mb-1.5 block text-sm font-bold text-muted">Poll name</span>
+				<input bind:value={title} required placeholder="Friday movie night" class="input" />
 			</label>
 			<label class="block">
-				<span class="text-sm text-slate-300">Your name</span>
-				<input bind:value={hostName} required placeholder="Alex" class="mt-1 w-full rounded-xl bg-slate-800 px-3 py-2.5 ring-1 ring-white/10 outline-none focus:ring-2 focus:ring-brand-500" />
+				<span class="mb-1.5 block text-sm font-bold text-muted">Your name</span>
+				<input bind:value={hostName} required placeholder="Alex" class="input" />
 			</label>
 		</div>
 
 		<div>
-			<span class="text-sm text-slate-300">What can people pick?</span>
-			<div class="mt-1 flex gap-2">
-				{#each [ ['both', 'Movies & Shows'], ['movie', 'Movies'], ['series', 'Shows'] ] as [val, label] (val)}
-					<button type="button" onclick={() => (scope = val)} class="flex-1 rounded-xl px-3 py-2.5 text-sm font-medium {scope === val ? 'bg-brand-500 text-white' : 'bg-slate-800 text-slate-300'}">{label}</button>
+			<span class="mb-1.5 block text-sm font-bold text-muted">What can people pick?</span>
+			<div class="flex gap-2">
+				{#each scopeOpts as [val, label] (val)}
+					<button type="button" onclick={() => (scope = val)} class="opt flex-1" class:is-on={scope === val}>{label}</button>
 				{/each}
 			</div>
 		</div>
@@ -186,39 +208,39 @@
 		<!-- Genre restriction (optional) -->
 		{#if allGenres.length > 0}
 			<div>
-				<span class="text-sm text-slate-300">Limit to genres <span class="text-slate-500">(optional)</span></span>
-				<div class="mt-1 flex flex-wrap gap-2">
+				<span class="mb-1.5 block text-sm font-bold text-muted">Limit to genres <span class="text-faint">(optional)</span></span>
+				<div class="flex flex-wrap gap-2">
 					{#each allGenres as g (g)}
-						<button type="button" onclick={() => toggleGenre(g)} class="rounded-full px-3 py-1 text-sm {selectedGenres.includes(g) ? 'bg-brand-500 text-white' : 'bg-slate-800 text-slate-300'}">{g}</button>
+						<button type="button" onclick={() => toggleGenre(g)} class="chip" class:is-on={selectedGenres.includes(g)}>{g}</button>
 					{/each}
 				</div>
 				{#if selectedGenres.length > 0}
-					<p class="mt-1 text-xs text-slate-500">Only {selectedGenres.join(', ')} can be nominated.</p>
+					<p class="mt-2 text-xs font-semibold text-faint">Only {selectedGenres.join(', ')} can be nominated.</p>
 				{/if}
 			</div>
 		{:else if genreError}
-			<p class="text-xs text-slate-500">Genres unavailable ({genreError}).</p>
+			<p class="text-xs font-semibold text-faint">Genres unavailable ({genreError}).</p>
 		{/if}
 
 		<!-- Submission rules -->
 		<div>
-			<span class="text-sm text-slate-300">How many can each person nominate?</span>
-			<div class="mt-1 flex gap-2">
-				{#each [ ['open', 'Any'], ['range', 'A range'], ['exact', 'Exactly'] ] as [val, label] (val)}
-					<button type="button" onclick={() => (ruleMode = val as typeof ruleMode)} class="flex-1 rounded-xl px-3 py-2.5 text-sm font-medium {ruleMode === val ? 'bg-brand-500 text-white' : 'bg-slate-800 text-slate-300'}">{label}</button>
+			<span class="mb-1.5 block text-sm font-bold text-muted">How many can each person nominate?</span>
+			<div class="flex gap-2">
+				{#each ruleOpts as [val, label] (val)}
+					<button type="button" onclick={() => (ruleMode = val as typeof ruleMode)} class="opt flex-1" class:is-on={ruleMode === val}>{label}</button>
 				{/each}
 			</div>
 			{#if ruleMode === 'range'}
-				<div class="mt-2 flex items-center gap-2 text-sm text-slate-400">
+				<div class="mt-2.5 flex items-center gap-2 text-sm font-bold text-muted">
 					<span>min</span>
-					<input type="number" min="0" bind:value={ruleMin} class="w-16 rounded-lg bg-slate-800 px-2 py-1.5 text-center ring-1 ring-white/10" />
+					<input type="number" min="0" bind:value={ruleMin} class="input w-16 px-2 py-1.5 text-center" />
 					<span>max</span>
-					<input type="number" min="0" bind:value={ruleMax} class="w-16 rounded-lg bg-slate-800 px-2 py-1.5 text-center ring-1 ring-white/10" />
+					<input type="number" min="0" bind:value={ruleMax} class="input w-16 px-2 py-1.5 text-center" />
 				</div>
 			{:else if ruleMode === 'exact'}
-				<div class="mt-2 flex items-center gap-2 text-sm text-slate-400">
+				<div class="mt-2.5 flex items-center gap-2 text-sm font-bold text-muted">
 					<span>exactly</span>
-					<input type="number" min="1" bind:value={ruleRequired} class="w-16 rounded-lg bg-slate-800 px-2 py-1.5 text-center ring-1 ring-white/10" />
+					<input type="number" min="1" bind:value={ruleRequired} class="input w-16 px-2 py-1.5 text-center" />
 					<span>each</span>
 				</div>
 			{/if}
@@ -226,48 +248,48 @@
 
 		<!-- Voting method -->
 		<div>
-			<span class="text-sm text-slate-300">Voting method</span>
-			<div class="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-3">
+			<span class="mb-1.5 block text-sm font-bold text-muted">Voting method</span>
+			<div class="grid grid-cols-2 gap-2">
 				{#each methods as m (m.key)}
-					<button type="button" onclick={() => selectMethod(m.key)} class="rounded-xl px-3 py-2.5 text-sm font-medium {method === m.key ? 'bg-brand-500 text-white' : 'bg-slate-800 text-slate-300'}">{m.label}</button>
+					<button type="button" onclick={() => selectMethod(m.key)} class="opt" class:is-on={method === m.key}>{m.label}</button>
 				{/each}
 			</div>
 
 			<!-- Method-specific options -->
-			<div class="mt-3 space-y-3 rounded-xl bg-slate-800/60 p-3 text-sm">
+			<div class="panel mt-2.5 space-y-3 p-3 text-sm">
 				{#if method === 'approval'}
 					<label class="flex items-center justify-between gap-3">
-						<span class="text-slate-300">Votes per person</span>
-						<input type="number" min="1" value={num(config.votes_per_user)} oninput={(e) => (config.votes_per_user = num(e.currentTarget.value))} class="w-20 rounded-lg bg-slate-900 px-2 py-1.5 text-center ring-1 ring-white/10" />
+						<span class="font-semibold text-ink">Votes per person</span>
+						<input type="number" min="1" value={num(config.votes_per_user)} oninput={(e) => (config.votes_per_user = num(e.currentTarget.value))} class="input w-20 px-2 py-1.5 text-center" />
 					</label>
 					<label class="flex items-center justify-between gap-3">
-						<span class="text-slate-300">Max votes on one title <span class="text-slate-500">(0 = no limit)</span></span>
-						<input type="number" min="0" value={num(config.max_votes_per_option)} oninput={(e) => (config.max_votes_per_option = num(e.currentTarget.value))} class="w-20 rounded-lg bg-slate-900 px-2 py-1.5 text-center ring-1 ring-white/10" />
+						<span class="font-semibold text-ink">Max votes on one title <span class="text-faint">(0 = no limit)</span></span>
+						<input type="number" min="0" value={num(config.max_votes_per_option)} oninput={(e) => (config.max_votes_per_option = num(e.currentTarget.value))} class="input w-20 px-2 py-1.5 text-center" />
 					</label>
 				{:else if method === 'ranked'}
 					<label class="flex items-center justify-between gap-3">
-						<span class="text-slate-300">How many to rank <span class="text-slate-500">(0 = all)</span></span>
-						<input type="number" min="0" value={num(config.max_ranked)} oninput={(e) => (config.max_ranked = num(e.currentTarget.value))} class="w-20 rounded-lg bg-slate-900 px-2 py-1.5 text-center ring-1 ring-white/10" />
+						<span class="font-semibold text-ink">How many to rank <span class="text-faint">(0 = all)</span></span>
+						<input type="number" min="0" value={num(config.max_ranked)} oninput={(e) => (config.max_ranked = num(e.currentTarget.value))} class="input w-20 px-2 py-1.5 text-center" />
 					</label>
 				{:else if method === 'score'}
 					<label class="flex items-center justify-between gap-3">
-						<span class="text-slate-300">Max rating</span>
-						<input type="number" min="2" value={num(config.max_score)} oninput={(e) => (config.max_score = num(e.currentTarget.value))} class="w-20 rounded-lg bg-slate-900 px-2 py-1.5 text-center ring-1 ring-white/10" />
+						<span class="font-semibold text-ink">Max rating</span>
+						<input type="number" min="2" value={num(config.max_score)} oninput={(e) => (config.max_score = num(e.currentTarget.value))} class="input w-20 px-2 py-1.5 text-center" />
 					</label>
 					<label class="flex items-center justify-between gap-3">
-						<span class="text-slate-300">Winner by</span>
-						<select value={config.aggregate ?? 'total'} onchange={(e) => (config.aggregate = e.currentTarget.value)} class="rounded-lg bg-slate-900 px-2 py-1.5 ring-1 ring-white/10">
+						<span class="font-semibold text-ink">Winner by</span>
+						<select value={config.aggregate ?? 'total'} onchange={(e) => (config.aggregate = e.currentTarget.value)} class="select">
 							<option value="total">Highest total</option>
 							<option value="average">Highest average</option>
 						</select>
 					</label>
 				{/if}
 				{#if method === 'random'}
-					<p class="text-slate-400">A random nomination is drawn as the winner — there's no voting round.</p>
+					<p class="font-semibold text-muted">A random nomination is drawn as the winner — there's no voting round.</p>
 				{:else}
 					<label class="flex items-center justify-between gap-3">
-						<span class="text-slate-300">Voting for your own picks</span>
-						<select value={selfVoteMode} onchange={(e) => setSelfVote(e.currentTarget.value)} class="rounded-lg bg-slate-900 px-2 py-1.5 ring-1 ring-white/10">
+						<span class="font-semibold text-ink">Voting for your own picks</span>
+						<select value={selfVoteMode} onchange={(e) => setSelfVote(e.currentTarget.value)} class="select">
 							<option value="unlimited">Allowed</option>
 							<option value="none">Not allowed</option>
 							<option value="limited">Limited…</option>
@@ -275,56 +297,58 @@
 					</label>
 					{#if selfVoteMode === 'limited'}
 						<label class="flex items-center justify-between gap-3">
-							<span class="text-slate-300">Most you can give your own picks</span>
-							<input type="number" min="1" value={num(config.max_self_votes)} oninput={(e) => (config.max_self_votes = Math.max(1, num(e.currentTarget.value)))} class="w-20 rounded-lg bg-slate-900 px-2 py-1.5 text-center ring-1 ring-white/10" />
+							<span class="font-semibold text-ink">Most you can give your own picks</span>
+							<input type="number" min="1" value={num(config.max_self_votes)} oninput={(e) => (config.max_self_votes = Math.max(1, num(e.currentTarget.value)))} class="input w-20 px-2 py-1.5 text-center" />
 						</label>
 					{/if}
 				{/if}
 			</div>
 		</div>
 
-		<div class="space-y-2">
-			<label class="flex items-center justify-between gap-3 text-sm">
-				<span class="text-slate-300">Allow guests (no account needed)</span>
-				<input type="checkbox" bind:checked={allowGuests} class="h-5 w-5 accent-brand-500" />
-			</label>
+		<div class="space-y-1">
+			<button type="button" onclick={() => (allowGuests = !allowGuests)} class="flex w-full items-center justify-between gap-3 py-1 text-left text-sm">
+				<span class="font-semibold text-ink">Allow guests <span class="text-faint">(no account needed)</span></span>
+				<span class="switch" role="switch" aria-checked={allowGuests}></span>
+			</button>
 			{#if method !== 'random'}
-				<label class="flex items-center justify-between gap-3 text-sm">
-					<span class="text-slate-300">Show live results during voting</span>
-					<input type="checkbox" bind:checked={resultsLive} class="h-5 w-5 accent-brand-500" />
-				</label>
+				<button type="button" onclick={() => (resultsLive = !resultsLive)} class="flex w-full items-center justify-between gap-3 py-1 text-left text-sm">
+					<span class="font-semibold text-ink">Show live results during voting</span>
+					<span class="switch" role="switch" aria-checked={resultsLive}></span>
+				</button>
 			{/if}
-			<label class="flex items-center justify-between gap-3 text-sm">
-				<span class="text-slate-300">Reveal who nominated, on the results screen</span>
-				<input type="checkbox" bind:checked={revealNominators} class="h-5 w-5 accent-brand-500" />
-			</label>
+			<button type="button" onclick={() => (revealNominators = !revealNominators)} class="flex w-full items-center justify-between gap-3 py-1 text-left text-sm">
+				<span class="font-semibold text-ink">Reveal who nominated, on results</span>
+				<span class="switch" role="switch" aria-checked={revealNominators}></span>
+			</button>
 			{#if revealNominators}
-				<label class="flex items-center justify-between gap-3 pl-1 text-sm">
-					<span class="text-slate-400">Show nominators for</span>
-					<select bind:value={revealScope} class="rounded-lg bg-slate-800 px-2 py-1.5 ring-1 ring-white/10">
+				<label class="flex items-center justify-between gap-3 pl-1 py-1 text-sm">
+					<span class="font-semibold text-muted">Show nominators for</span>
+					<select bind:value={revealScope} class="select">
 						<option value="winner">The winner only</option>
 						<option value="all">Every title</option>
 					</select>
 				</label>
 			{/if}
 			{#if seerrEnabled}
-				<label class="flex items-center justify-between gap-3 text-sm">
-					<span class="text-slate-300">Allow titles not in your library (via Seerr)</span>
-					<input type="checkbox" bind:checked={allowWriteins} class="h-5 w-5 accent-brand-500" />
-				</label>
+				<button type="button" onclick={() => (allowWriteins = !allowWriteins)} class="flex w-full items-center justify-between gap-3 py-1 text-left text-sm">
+					<span class="font-semibold text-ink">Allow titles not in your library <span class="text-faint">(via Seerr)</span></span>
+					<span class="switch" role="switch" aria-checked={allowWriteins}></span>
+				</button>
 				{#if allowWriteins}
-					<label class="flex items-center justify-between gap-3 pl-1 text-sm">
-						<span class="text-slate-400">Auto-request the winner if it's a write-in</span>
-						<input type="checkbox" bind:checked={autoRequestWinner} class="h-5 w-5 accent-brand-500" />
-					</label>
+					<button type="button" onclick={() => (autoRequestWinner = !autoRequestWinner)} class="flex w-full items-center justify-between gap-3 pl-1 py-1 text-left text-sm">
+						<span class="font-semibold text-muted">Auto-request the winner if it's a write-in</span>
+						<span class="switch" role="switch" aria-checked={autoRequestWinner}></span>
+					</button>
 				{/if}
 			{/if}
 		</div>
 
-		{#if error}<p class="text-sm text-rose-400">{error}</p>{/if}
+		{#if error}<p class="text-sm font-semibold text-coral-ink">{error}</p>{/if}
 
-		<button type="submit" disabled={creating} class="w-full rounded-xl bg-brand-500 px-4 py-3 font-semibold text-white hover:bg-brand-600 disabled:opacity-40">
+		<button type="submit" disabled={creating} class="btn btn-primary w-full">
 			{creating ? 'Creating…' : 'Create poll'}
 		</button>
 	</form>
+
+	<p class="mt-6 text-center text-xs font-semibold text-faint">self-hosted movie voting for your Jellyfin library</p>
 </main>
