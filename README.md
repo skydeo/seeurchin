@@ -1,10 +1,27 @@
-# seeurchin 🌊🦔
+<div align="center">
 
-A self-hosted, group movie/show picker for [Jellyfin](https://jellyfin.org/).
+<img src="docs/brand/icons/seeurchin-mark.svg" alt="seeurchin" width="88" height="88" />
+
+# seeurchin
+
+**Pick what to watch, together.**
+
+A self-hosted, group movie &amp; show picker for [Jellyfin](https://jellyfin.org/).
 Drop a link in a group chat and let everyone collectively decide what to watch
 through a two-round poll — nominate titles straight from your own library, then
 vote. Mobile-first, no accounts required, runs as a single small container
 alongside your existing Jellyfin stack.
+
+</div>
+
+<table align="center">
+<tr>
+<td align="center"><img src="docs/screenshots/home.png" width="190" alt="Create a poll" /><br /><sub><b>Start a poll</b></sub></td>
+<td align="center"><img src="docs/screenshots/nominate.png" width="190" alt="Nominate from your library" /><br /><sub><b>Round 1 — nominate</b></sub></td>
+<td align="center"><img src="docs/screenshots/vote.png" width="190" alt="Cast your vote" /><br /><sub><b>Round 2 — vote</b></sub></td>
+<td align="center"><img src="docs/screenshots/results.png" width="190" alt="Winner revealed" /><br /><sub><b>Results</b></sub></td>
+</tr>
+</table>
 
 ---
 
@@ -43,6 +60,8 @@ Everything updates in real time via Server-Sent Events — no refreshing.
   no `O/0/I/1/L` confusion), embedded in a tappable link.
 - **Mobile-first** — designed for passing a phone around / dropping a link in a
   chat.
+- **Light & dark, theme-aware** — the "Reef" design system adapts to system,
+  light, or dark with no flash of the wrong theme.
 - **Live updates** — counts, nominations, and results stream over SSE.
 - **Tiny footprint** — a single ~13 MB distroless image; pure-Go SQLite, no
   external database.
@@ -216,6 +235,36 @@ Create-poll body:
 
 ---
 
+## Look &amp; feel
+
+seeurchin wears the **"Reef"** design system: a token-driven, theme-aware
+(**system / light / dark**) skin built on SvelteKit (Svelte 5) + Tailwind v4.
+The mark is a twelve-spike urchin in the poll palette — coral, teal, mango,
+ocean — radiating from an ink hub, reading as individual votes gathered around
+a pick. The wordmark is lowercase **Baloo 2**.
+
+<table align="center">
+<tr>
+<td align="center"><img src="docs/screenshots/results.png" width="220" alt="Results, light theme" /><br /><sub><b>Light</b></sub></td>
+<td align="center"><img src="docs/screenshots/results-dark.png" width="220" alt="Results, dark theme" /><br /><sub><b>Dark</b></sub></td>
+</tr>
+</table>
+
+- **Palette:** ocean `#0e5a7d`, teal `#11b3aa`, coral `#ff6f5e`, mango `#ffa23a`,
+  sun `#ffce5c`, ink `#143a45`, sand `#fdf7ec`.
+- **Type:** Baloo 2 (display/wordmark), Quicksand (titles), Nunito (body).
+- **Conventions, tokens, and component classes:** see
+  [`docs/design-system.md`](docs/design-system.md).
+- **Brand source masters** (mark cuts, app-icon masters, the Baloo 2 font + OFL
+  license) live in [`docs/brand/`](docs/brand/); the runtime favicon / app-icon
+  kit + PWA manifest are in `web/static/brand/`.
+
+> Screenshots are generated against a live instance by
+> [`tools/screenshots`](tools/screenshots) — re-run it after a UI change to
+> refresh the gallery above.
+
+---
+
 ## Development
 
 Backend (run the API on `:5859`; the frontend dev server proxies `/api` to it):
@@ -259,7 +308,10 @@ docker build -t seeurchin:latest .
 - **Backend:** Go — [`chi`](https://github.com/go-chi/chi) router, pure-Go
   SQLite via [`modernc.org/sqlite`](https://pkg.go.dev/modernc.org/sqlite) (no
   CGO), and the built frontend embedded with `embed.FS`.
-- **Frontend:** SvelteKit (Svelte 5, static adapter, SPA) + Tailwind CSS v4.
+- **Frontend:** SvelteKit (Svelte 5, static adapter, SPA) + Tailwind CSS v4,
+  wearing the **"Reef"** design system — semantic tokens that re-map for light
+  and dark, so theming is automatic (no `dark:` variants). See
+  [`docs/design-system.md`](docs/design-system.md).
 - **Live updates:** Server-Sent Events via an in-memory hub keyed by poll.
 - **Sessions:** HMAC-signed, HTTP-only cookie holding a per-poll token map.
 - **Identity:** guest provider now, behind an `auth.Provider` seam; participants
@@ -277,10 +329,11 @@ internal/poll        domain types + service (state machine, rules)
 internal/voting      pluggable voting engine (approval, ranked, score, random)
 internal/codes       Crockford base32 share codes
 internal/auth        session cookies + provider seam (guest now, Jellyfin later)
-internal/jellyfin    Jellyfin client (modern auth header, search, image proxy)
 internal/seerr       Seerr client (external search, winner auto-request)
 internal/httpapi     REST + SSE handlers, embedded SPA
-web/                 SvelteKit + Tailwind frontend
+web/                 SvelteKit + Tailwind frontend ("Reef" design system)
+docs/                design-system.md + brand source masters
+tools/screenshots    Playwright generator for the README screenshots
 ```
 
 ---
@@ -301,7 +354,9 @@ web/                 SvelteKit + Tailwind frontend
 **v1.1.0** — adds a **random pick** voting method, **genre-restricted**
 nominations, an option to **reveal who nominated** on the results screen,
 **capped self-voting** (`max_self_votes`), and a clearer round-1 nomination
-screen, on top of v1.0.
+screen, on top of v1.0. The UI now wears the **"Reef"** design system with
+system / light / dark theming.
 
 **v1.0.0** — the two-round flow, the core voting methods, guest identity, live
 updates, library browsing, and Docker packaging are complete and in use.
+</content>
