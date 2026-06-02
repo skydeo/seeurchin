@@ -199,7 +199,9 @@ func requestStatusLabel(status int) string {
 func (c *Client) getJSON(ctx context.Context, path string, q url.Values, out any) error {
 	u := c.baseURL + path
 	if len(q) > 0 {
-		u += "?" + q.Encode()
+		// Seerr rejects '+'-encoded spaces ("must be url encoded"); use %20.
+		// QueryEscape renders a literal '+' as %2B, so only spaces become '+'.
+		u += "?" + strings.ReplaceAll(q.Encode(), "+", "%20")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {

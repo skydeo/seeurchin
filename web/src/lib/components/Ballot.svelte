@@ -148,7 +148,7 @@
 				<div class="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
 					{#each unranked as n (n.id)}
 						<button onclick={() => addRank(n.id)} class="min-w-0 text-left">
-							<PosterImage itemId={n.item_id} tag={n.image_tag} title={n.title} />
+							<PosterImage itemId={n.item_id} tag={n.image_tag} posterUrl={n.poster_url ?? ''} title={n.title} />
 							<p class="mt-1.5 truncate text-[13px] font-bold text-ink">{n.title}</p>
 						</button>
 					{/each}
@@ -163,7 +163,7 @@
 				{@const blocked = selfBlocked(mine)}
 				<div class="flex items-center gap-3 rounded-[14px] border border-line bg-surface p-2.5 shadow-sm {blocked ? 'opacity-50' : ''}">
 					<div class="h-16 w-11 shrink-0 overflow-hidden rounded-md">
-						<PosterImage itemId={n.item_id} tag={n.image_tag} title={n.title} />
+						<PosterImage itemId={n.item_id} tag={n.image_tag} posterUrl={n.poster_url ?? ''} title={n.title} />
 					</div>
 					<div class="min-w-0 flex-1">
 						<p class="truncate text-sm font-bold text-ink">{n.title}</p>

@@ -27,7 +27,7 @@
 	let ruleRequired = $state(2);
 	let allowGuests = $state(true);
 	let resultsLive = $state(false);
-	let revealNominators = $state(false);
+	let revealNominators = $state(true);
 	let revealScope = $state('winner');
 	let allGenres = $state<string[]>([]);
 	let selectedGenres = $state<string[]>([]);
