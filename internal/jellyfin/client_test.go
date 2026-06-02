@@ -38,6 +38,66 @@ func TestAuthHeaderOmitsEmptyToken(t *testing.T) {
 	}
 }
 
+func TestFindByTMDB(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("Fields"); !strings.Contains(got, "ProviderIds") {
+			t.Errorf("Fields = %q, want ProviderIds requested", got)
+		}
+		if got := r.URL.Query().Get("IncludeItemTypes"); got != "Movie" {
+			t.Errorf("IncludeItemTypes = %q, want Movie", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"Items":[
+			{"Id":"a","Name":"Super 8","Type":"Movie","ProductionYear":2011,"ProviderIds":{"Tmdb":"37686"}},
+			{"Id":"b","Name":"Super 8 (other)","Type":"Movie","ProductionYear":1936}
+		]}`))
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "k")
+
+	// Matches by TMDB provider id regardless of title noise.
+	got, err := c.FindByTMDB(context.Background(), 37686, "Super 8", "Movie", 2011)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.ID != "a" {
+		t.Fatalf("expected TMDB-id match on item a, got %+v", got)
+	}
+
+	// A different TMDB id with no exact title+year twin returns no match (the
+	// 1936 item differs in title and year, so the fallback must not fire).
+	got, err = c.FindByTMDB(context.Background(), 99999, "Super 8", "Movie", 2011)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("expected no match for unknown id, got %+v", got)
+	}
+}
+
+func TestFindByTMDBTitleYearFallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// No TMDB provider id on the library item, so the title+year fallback
+		// is the only available signal.
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"Items":[{"Id":"x","Name":"Dune","Type":"Movie","ProductionYear":2021}]}`))
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "k")
+
+	got, err := c.FindByTMDB(context.Background(), 438631, "dune", "Movie", 2021)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.ID != "x" {
+		t.Fatalf("expected title+year fallback match, got %+v", got)
+	}
+	// Year mismatch must not match via the fallback.
+	if got, _ := c.FindByTMDB(context.Background(), 438631, "dune", "Movie", 1984); got != nil {
+		t.Fatalf("year mismatch should not match, got %+v", got)
+	}
+}
+
 func TestSearchSendsModernHeaderAndParses(t *testing.T) {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

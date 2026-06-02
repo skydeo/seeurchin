@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -254,11 +255,21 @@ func (s *Server) handleSearchExternal(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, err)
 		return
 	}
-	out := results[:0] // reuse backing array; keep only scope-appropriate hits
+	// Keep the request tab consistent with the library tab: drop hits outside the
+	// poll's scope and, when the poll restricts genres, outside those genres.
+	// Jellyfin genre names map only approximately to TMDB ids (see
+	// seerr.GenreIDSet), so unrecognized names yield an empty set and impose no
+	// restriction rather than hiding everything.
+	allowedGenres := seerr.GenreIDSet(p.Genres)
+	out := results[:0] // reuse backing array
 	for _, res := range results {
-		if scopeAllowsMedia(p.LibraryScope, res.MediaType) {
-			out = append(out, res)
+		if !scopeAllowsMedia(p.LibraryScope, res.MediaType) {
+			continue
 		}
+		if !seerr.MatchesGenres(res.GenreIDs, allowedGenres) {
+			continue
+		}
+		out = append(out, res)
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{"results": out})
 }
@@ -310,6 +321,19 @@ func (s *Server) handleNominate(w http.ResponseWriter, r *http.Request) {
 		}
 		if in == nil {
 			s.writeJSON(w, http.StatusBadRequest, errResp{"that title was not found"})
+			return
+		}
+		// Don't let a write-in re-request something already in the library — e.g.
+		// a title hidden from the library tab by the poll's genre filter. Best
+		// effort: a Jellyfin hiccup shouldn't block a legitimate new nomination.
+		itemType := "Movie"
+		if in.MediaType == "tv" {
+			itemType = "Series"
+		}
+		if existing, ferr := s.jf.FindByTMDB(r.Context(), in.TMDBID, in.Title, itemType, in.Year); ferr != nil {
+			log.Printf("library dup-check %q: %v", in.Title, ferr)
+		} else if existing != nil {
+			s.writeJSON(w, http.StatusConflict, errResp{fmt.Sprintf("%q is already in your library", existing.Name)})
 			return
 		}
 		if _, err := s.svc.SubmitWriteIn(r.Context(), p, me, *in); err != nil {

@@ -69,7 +69,12 @@ type Item struct {
 	CommunityRating float64           `json:"CommunityRating"`
 	Genres          []string          `json:"Genres"`
 	ImageTags       map[string]string `json:"ImageTags"`
+	ProviderIds     map[string]string `json:"ProviderIds"` // e.g. {"Tmdb":"1234","Imdb":"tt.."}
 }
+
+// TMDBID returns the item's TMDB id as a string ("" if absent). Jellyfin keys
+// provider ids by name; TMDB is "Tmdb".
+func (it Item) TMDBID() string { return it.ProviderIds["Tmdb"] }
 
 // RuntimeMinutes converts Jellyfin's 100ns ticks to whole minutes.
 func (it Item) RuntimeMinutes() int {
@@ -174,6 +179,48 @@ func (c *Client) GetItem(ctx context.Context, id string) (*Item, error) {
 		return nil, nil
 	}
 	return &out.Items[0], nil
+}
+
+// FindByTMDB looks for a library item matching a TMDB id, so write-ins for
+// titles already in the library (even ones hidden by a poll's genre filter)
+// aren't re-requested. Jellyfin can't filter by provider id server-side, so it
+// searches by title and matches on the Tmdb provider id, falling back to an
+// exact title+year match only for items that carry no TMDB id at all. itemType
+// is the Jellyfin type ("Movie" | "Series"). Returns (nil, nil) on no match.
+func (c *Client) FindByTMDB(ctx context.Context, tmdbID int, title, itemType string, year int) (*Item, error) {
+	if tmdbID <= 0 || strings.TrimSpace(title) == "" {
+		return nil, nil
+	}
+	q := url.Values{}
+	q.Set("Recursive", "true")
+	q.Set("IncludeItemTypes", itemType)
+	q.Set("SearchTerm", title)
+	q.Set("Fields", "ProviderIds,ProductionYear")
+	q.Set("Limit", "25")
+	var out struct {
+		Items []Item `json:"Items"`
+	}
+	if err := c.getJSON(ctx, "/Items", q, &out); err != nil {
+		return nil, err
+	}
+	want := strconv.Itoa(tmdbID)
+	wantTitle := strings.ToLower(strings.TrimSpace(title))
+	var fallback *Item
+	for i := range out.Items {
+		it := &out.Items[i]
+		if it.TMDBID() == want {
+			return it, nil
+		}
+		// Title+year fallback only when the library item has no TMDB id, so an
+		// id mismatch reflects genuinely different media rather than absent
+		// metadata. Require an exact normalized title and matching year.
+		if fallback == nil && it.TMDBID() == "" &&
+			strings.ToLower(strings.TrimSpace(it.Name)) == wantTitle &&
+			(year == 0 || it.ProductionYear == year) {
+			fallback = it
+		}
+	}
+	return fallback, nil
 }
 
 // FetchImage retrieves an item image (e.g. imageType "Primary"). The caller is

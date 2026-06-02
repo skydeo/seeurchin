@@ -46,6 +46,7 @@ type Result struct {
 	PosterURL string `json:"poster_url"`
 	Overview  string `json:"overview"`
 	InLibrary bool   `json:"in_library"`
+	GenreIDs  []int  `json:"-"` // TMDB genre ids, used server-side for genre gating
 }
 
 // tmdbItem is the shared shape of search results and detail responses.
@@ -58,6 +59,7 @@ type tmdbItem struct {
 	FirstAirDate string `json:"firstAirDate"` // tv
 	PosterPath   string `json:"posterPath"`
 	Overview     string `json:"overview"`
+	GenreIDs     []int  `json:"genreIds"` // present on search results
 	MediaInfo    *struct {
 		Status int `json:"status"` // 4 = partially available, 5 = available
 	} `json:"mediaInfo"`
@@ -72,6 +74,7 @@ func (it tmdbItem) toResult(mediaType string) Result {
 		PosterURL: posterURL(it.PosterPath),
 		Overview:  it.Overview,
 		InLibrary: it.MediaInfo != nil && it.MediaInfo.Status >= 4,
+		GenreIDs:  it.GenreIDs,
 	}
 }
 

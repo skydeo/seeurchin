@@ -52,6 +52,41 @@ func TestSearchMapsAndDropsPeople(t *testing.T) {
 	}
 }
 
+func TestSearchCapturesGenreIDs(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"results":[
+			{"id":1,"mediaType":"movie","title":"A","genreIds":[878,12]}
+		]}`)
+	}))
+	defer ts.Close()
+	res, err := New(ts.URL, "k").Search(context.Background(), "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || len(res[0].GenreIDs) != 2 || res[0].GenreIDs[0] != 878 {
+		t.Fatalf("genre ids not captured: %+v", res)
+	}
+}
+
+func TestGenreFiltering(t *testing.T) {
+	// "Science Fiction" maps to the movie Sci-Fi id (878) and the TV bucket
+	// (10765); unrecognized names contribute nothing.
+	allowed := GenreIDSet([]string{"Science Fiction", "made up genre"})
+	if !allowed[878] || !allowed[10765] {
+		t.Fatalf("science fiction should map to 878 and 10765: %v", allowed)
+	}
+	if !MatchesGenres([]int{18, 878}, allowed) {
+		t.Errorf("a sci-fi title should match")
+	}
+	if MatchesGenres([]int{18, 35}, allowed) {
+		t.Errorf("a drama/comedy title should not match a sci-fi restriction")
+	}
+	// An empty allowed set (no restriction, or only unknown names) matches all.
+	if !MatchesGenres([]int{18}, GenreIDSet(nil)) || !MatchesGenres([]int{18}, GenreIDSet([]string{"???"})) {
+		t.Errorf("no recognized restriction should match everything")
+	}
+}
+
 func TestCreateRequestBody(t *testing.T) {
 	var gotMovie, gotTV map[string]any
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
