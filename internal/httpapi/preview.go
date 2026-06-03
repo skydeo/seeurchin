@@ -22,6 +22,7 @@ import (
 
 	"github.com/enderu/seeurchin/internal/codes"
 	"github.com/enderu/seeurchin/internal/poll"
+	"github.com/enderu/seeurchin/internal/voting"
 )
 
 // Link-preview (Open Graph) support. SvelteKit serves a single static
@@ -134,7 +135,7 @@ func (s *Server) handlePollPreview(w http.ResponseWriter, r *http.Request) {
 	if v, ok := previewCache.Load(cacheKey); ok {
 		pngBytes = v.([]byte)
 	} else {
-		pngBytes, err = renderCard(p.Title, p.Code, hostFromBase(s.cfg.BaseURL))
+		pngBytes, err = renderCard(p.Title, p.Code, previewContext(p), hostFromBase(s.cfg.BaseURL))
 		if err != nil {
 			http.Error(w, "preview unavailable", http.StatusInternalServerError)
 			return
@@ -219,9 +220,58 @@ func hostFromBase(base string) string {
 	return strings.TrimRight(h, "/")
 }
 
+// previewContext builds the one quiet context line on the share card (e.g.
+// "Approval vote · Movies & shows"). It uses only fields fixed at creation, so
+// the cached PNG never goes stale — deliberately no live counts. Returns "" if
+// nothing is known.
+func previewContext(p *poll.Poll) string {
+	parts := make([]string, 0, 2)
+	if m := cardMethodLabel(p.VotingMethod); m != "" {
+		parts = append(parts, m)
+	}
+	if sc := cardScopeLabel(p.LibraryScope); sc != "" {
+		parts = append(parts, sc)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// cardMethodLabel is a short, friendly voting-method name for the card (shorter
+// than voting.Method.Label, which is tuned for the in-app picker).
+func cardMethodLabel(method string) string {
+	switch method {
+	case "approval":
+		return "Approval vote"
+	case "ranked":
+		return "Ranked-choice vote"
+	case "score":
+		return "Star rating"
+	case "random":
+		return "Random pick"
+	default:
+		if m, ok := voting.Get(method); ok {
+			return m.Label()
+		}
+		return ""
+	}
+}
+
+// cardScopeLabel renders the library scope for the card context line.
+func cardScopeLabel(scope poll.LibraryScope) string {
+	switch scope {
+	case poll.ScopeMovies:
+		return "Movies"
+	case poll.ScopeSeries:
+		return "Shows"
+	case poll.ScopeBoth:
+		return "Movies & shows"
+	default:
+		return ""
+	}
+}
+
 // --- card rendering ---
 
-func renderCard(title, code, host string) ([]byte, error) {
+func renderCard(title, code, context, host string) ([]byte, error) {
 	if err := loadFonts(); err != nil {
 		return nil, err
 	}
@@ -233,52 +283,157 @@ func renderCard(title, code, host string) ([]byte, error) {
 	// at very low alpha — so the brand colors show through, subdued, without
 	// overlapping spines darkening at the hub.
 	wm := image.NewRGBA(img.Bounds())
-	drawMark(wm, 720, -150, 6.8)
+	drawMark(wm, 760, -170, 6.8)
 	draw.DrawMask(img, img.Bounds(), wm, image.Point{}, image.NewUniform(color.Alpha{A: wmAlpha}), image.Point{}, draw.Over)
 
 	const margin = 84
 
-	// --- Lockup: urchin mark + "seeurchin" wordmark ---
-	const markSize = 100
-	markY := float64(70)
+	// --- Lockup: small urchin mark + "seeurchin" wordmark, top-left. Kept
+	// modest so the poll title can be the hero below it. ---
+	const markSize = 64
+	markY := float64(54)
 	drawMark(img, margin, markY, markSize/100.0)
 
-	wordFace := face(fontExtraBold, 62)
-	wordX := margin + markSize + 26
-	// Vertically center the wordmark on the mark.
+	wordFace := face(fontExtraBold, 42)
+	wordX := margin + markSize + 20
 	wordBaseline := int(markY) + markSize/2 + capCenterOffset(wordFace)
 	drawText(img, wordFace, colText, "seeurchin", wordX, wordBaseline, 0)
 
-	// --- Poll title ---
-	if t := strings.TrimSpace(title); t != "" {
-		titleFace := face(fontSemiBold, 56)
-		t = fitText(titleFace, t, cardW-2*margin, 0)
-		drawText(img, titleFace, colText, t, margin, 312, 0)
+	// --- Code chip (sized first so we can center the whole block below). The
+	// chip's text is laid out by cap height, not the font's full line box —
+	// Baloo 2's metrics carry a deep descent the all-caps code never uses, which
+	// would otherwise leave the chip bottom-heavy. ---
+	eyebrowFace := face(fontSemiBold, 26)
+	codeFace := face(fontExtraBold, 78)
+	ebTrack, codeTrack := fixed.I(6), fixed.I(8)
+	const eyebrow = "JOIN WITH CODE"
+	innerW := measure(eyebrowFace, eyebrow, ebTrack).Ceil()
+	if w := measure(codeFace, code, codeTrack).Ceil(); w > innerW {
+		innerW = w
+	}
+	const ebCap, codeCap = 24, 56 // visual cap heights of the two chip lines
+	const chipPadX, chipPadT, chipPadB, chipGap = 38, 28, 30, 12
+	chipW := innerW + 2*chipPadX
+	chipH := chipPadT + ebCap + chipGap + codeCap + chipPadB
+
+	// --- Vertical layout: title block → context line → code chip, centered as
+	// a group in the band between the lockup and the footer. The title leads at
+	// 76px; if it wraps to two lines it steps down to 58px so it still fits. ---
+	titleFace := face(fontSemiBold, 76)
+	titleStep := 86
+	titleLines := wrapLines(titleFace, strings.TrimSpace(title), cardW-2*margin, 0, 2)
+	if len(titleLines) > 1 {
+		titleFace = face(fontSemiBold, 58)
+		titleStep = 70
+		titleLines = wrapLines(titleFace, strings.TrimSpace(title), cardW-2*margin, 0, 2)
+	}
+	hasCtx := strings.TrimSpace(context) != ""
+
+	titleH := len(titleLines) * titleStep
+	const gapTitleCtx, gapCtxChip, ctxStep = 18, 30, 44
+	ctxBlock := 0
+	if hasCtx {
+		ctxBlock = gapTitleCtx + ctxStep
+	}
+	groupH := titleH + ctxBlock + gapCtxChip + chipH
+
+	const bandTop, bandBot = 156, 540
+	top := bandTop + (bandBot-bandTop-groupH)/2
+	if top < bandTop {
+		top = bandTop
 	}
 
-	// --- Code pill ---
-	codeFace := face(fontExtraBold, 110)
-	tracking := fixed.I(10)
-	codeWpx := measure(codeFace, code, tracking).Ceil()
-	const padX, pillH, pillY = 56, 158, 356
-	pillW := codeWpx + 2*padX
-	drawRoundRect(img, margin, pillY, pillW, pillH, 34, colPill, colPillLine, 3)
-	codeBaseline := pillY + pillH/2 + capCenterOffset(codeFace)
-	drawText(img, codeFace, colCode, code, margin+padX, codeBaseline, tracking)
+	// Title — the hero. Each line's baseline sits ~0.74 down its step box.
+	titleBaseAsc := titleStep * 74 / 100
+	y := top
+	for _, line := range titleLines {
+		drawText(img, titleFace, colText, line, margin, y+titleBaseAsc, 0)
+		y += titleStep
+	}
 
-	// --- Footer ---
+	// Context line (quiet, creation-time only).
+	if hasCtx {
+		ctxFace := face(fontMed, 31)
+		y += gapTitleCtx
+		drawText(img, ctxFace, colMuted, context, margin, y+ctxStep*72/100, 0)
+		y += ctxStep
+	}
+
+	// Code chip: rounded surface + "JOIN WITH CODE" eyebrow over the big code.
+	y += gapCtxChip
+	chipTop := y
+	drawRoundRect(img, margin, chipTop, chipW, chipH, 28, colPill, colPillLine, 3)
+	ebBaseline := chipTop + chipPadT + ebCap
+	drawText(img, eyebrowFace, colMuted, eyebrow, margin+chipPadX, ebBaseline, ebTrack)
+	codeBaseline := ebBaseline + chipGap + codeCap
+	drawText(img, codeFace, colCode, code, margin+chipPadX, codeBaseline, codeTrack)
+
+	// --- Footer: host on the left, a clear call-to-action on the right. ---
 	footFace := face(fontMed, 30)
 	footBaseline := cardH - 46
 	drawText(img, footFace, colMuted, host, margin, footBaseline, 0)
-	tag := "movie night vote"
-	tagW := measure(footFace, tag, 0).Ceil()
-	drawText(img, footFace, colMuted, tag, cardW-margin-tagW, footBaseline, 0)
+	cta := "Tap to join →"
+	if !hasGlyph(footFace, '→') {
+		cta = "Tap to join >"
+	}
+	ctaW := measure(footFace, cta, 0).Ceil()
+	drawText(img, footFace, colCode, cta, cardW-margin-ctaW, footBaseline, 0)
 
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// wrapLines splits s into at most maxLines lines that each fit within maxW px,
+// breaking on spaces. The final line packs any remaining words and is
+// ellipsized by fitText if it overflows; an overlong single word is hard-cut.
+func wrapLines(fc font.Face, s string, maxW int, tracking fixed.Int26_6, maxLines int) []string {
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, maxLines)
+	cur := ""
+	for i := 0; i < len(words); i++ {
+		w := words[i]
+		cand := w
+		if cur != "" {
+			cand = cur + " " + w
+		}
+		if measure(fc, cand, tracking).Ceil() <= maxW {
+			cur = cand
+			continue
+		}
+		// w doesn't fit on the current line.
+		if len(lines) == maxLines-1 {
+			// Last allowed line: pack the rest and let fitText ellipsize.
+			rest := strings.Join(words[i:], " ")
+			if cur != "" {
+				rest = cur + " " + rest
+			}
+			return append(lines, fitText(fc, rest, maxW, tracking))
+		}
+		if cur == "" {
+			// A single word too wide for an empty line: hard-cut it.
+			lines = append(lines, fitText(fc, w, maxW, tracking))
+			continue
+		}
+		lines = append(lines, cur)
+		cur = ""
+		i-- // reprocess w on the fresh line
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return lines
+}
+
+// hasGlyph reports whether the face can render r (else the drawer emits .notdef).
+func hasGlyph(fc font.Face, r rune) bool {
+	_, ok := fc.GlyphAdvance(r)
+	return ok
 }
 
 // urchinSpines is the seeurchin mark's 12 spine segments on its native 100x100
