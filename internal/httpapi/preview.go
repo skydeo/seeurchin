@@ -282,40 +282,64 @@ func renderCard(title, code, host string) ([]byte, error) {
 }
 
 // urchinSpines is the seeurchin mark's 12 spine segments on its native 100x100
-// artboard, each with the brand color it's stroked in.
+// artboard, each with the brand color it's stroked in. (x1,y1) is the inner
+// base (tucked under the hub at r=13.5 so the arm reads as attached); (x2,y2)
+// is the outer tip. Outer tips are deliberately irregular for an organic
+// silhouette.
 var urchinSpines = []struct {
 	x1, y1, x2, y2 float64
 	c              color.RGBA
 }{
-	{50, 35, 50, 4, colCoral},
-	{57.5, 37.01, 69.5, 16.23, colTeal},
-	{62.99, 42.5, 87.24, 28.5, colMango},
-	{65, 50, 96, 50, colOcean},
-	{62.99, 57.5, 83.77, 69.5, colCoral},
-	{57.5, 62.99, 71.5, 87.24, colTeal},
-	{50, 65, 50, 96, colMango},
-	{42.5, 62.99, 30.5, 83.77, colOcean},
-	{37.01, 57.5, 12.76, 71.5, colCoral},
-	{35, 50, 4, 50, colTeal},
-	{37.01, 42.5, 16.23, 30.5, colMango},
-	{42.5, 37.01, 28.5, 12.76, colOcean},
+	{50, 39, 50, 4, colCoral},
+	{55.5, 40.47, 69.5, 16.23, colTeal},
+	{59.53, 44.5, 87.24, 28.5, colMango},
+	{61, 50, 96, 50, colOcean},
+	{59.53, 55.5, 83.77, 69.5, colCoral},
+	{55.5, 59.53, 71.5, 87.24, colTeal},
+	{50, 61, 50, 96, colMango},
+	{44.5, 59.53, 30.5, 83.77, colOcean},
+	{40.47, 55.5, 12.76, 71.5, colCoral},
+	{39, 50, 4, 50, colTeal},
+	{40.47, 44.5, 16.23, 30.5, colMango},
+	{44.5, 40.47, 28.5, 12.76, colOcean},
 }
 
 // drawMark renders the full-color urchin (12 spines + two-tone core) at the
-// given top-left origin, scaled from its native 100x100 artboard.
+// given top-left origin, scaled from its native 100x100 artboard. Spines have a
+// flat inner base and a rounded outer tip; the core is a clear two-tone hub.
 func drawMark(dst draw.Image, ox, oy, scale float64) {
 	tx := func(v float64) float32 { return float32(ox + v*scale) }
 	ty := func(v float64) float32 { return float32(oy + v*scale) }
 	hw := float32(3 * scale) // half of the stroke-width 6
 	for _, sp := range urchinSpines {
-		fillCapsule(dst, tx(sp.x1), ty(sp.y1), tx(sp.x2), ty(sp.y2), hw, sp.c)
+		// (x1,y1) inner = flat base, (x2,y2) outer = round tip.
+		fillSpine(dst, tx(sp.x1), ty(sp.y1), tx(sp.x2), ty(sp.y2), hw, sp.c)
 	}
-	// Core: ink ring (r=12.5) then sun pupil (r=5.4).
-	fillCircle(dst, tx(50), ty(50), float32(12.5*scale), colCore)
-	fillCircle(dst, tx(50), ty(50), float32(5.4*scale), colSun)
+	// Core: clear ink ring (r=13.5) then sun inner circle (r=6.5). Drawn after
+	// the spines so it cleanly covers their flat bases.
+	fillCircle(dst, tx(50), ty(50), float32(13.5*scale), colCore)
+	fillCircle(dst, tx(50), ty(50), float32(6.5*scale), colSun)
+}
+
+// fillSpine rasterizes a shaft with a FLAT inner cap at (x1,y1) and a ROUND
+// outer cap at (x2,y2) — the urchin-arm shape. (Compare fillCapsule, which
+// rounds both ends.)
+func fillSpine(dst draw.Image, x1, y1, x2, y2, hw float32, c color.Color) {
+	z := vector.NewRasterizer(dst.Bounds().Dx(), dst.Bounds().Dy())
+	ang := math.Atan2(float64(y2-y1), float64(x2-x1))
+	na := ang + math.Pi/2
+	ax := float32(math.Cos(na)) * hw
+	ay := float32(math.Sin(na)) * hw
+	z.MoveTo(x1+ax, y1+ay)             // inner base, side A
+	z.LineTo(x2+ax, y2+ay)             // outer, side A
+	arc(z, x2, y2, hw, na, na-math.Pi) // round outer cap (sweep through the tip)
+	z.LineTo(x1-ax, y1-ay)             // outer side B → inner base, side B
+	z.ClosePath()                      // straight FLAT edge across the inner base
+	z.Draw(dst, dst.Bounds(), image.NewUniform(c), image.Point{})
 }
 
 // fillCapsule rasterizes a round-capped line (a "stadium") in src color.
+// Retained for fillCircle (zero-length capsule).
 func fillCapsule(dst draw.Image, x1, y1, x2, y2, hw float32, c color.Color) {
 	z := vector.NewRasterizer(dst.Bounds().Dx(), dst.Bounds().Dy())
 	ang := math.Atan2(float64(y2-y1), float64(x2-x1))
