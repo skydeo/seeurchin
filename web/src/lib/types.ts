@@ -62,6 +62,20 @@ export interface ResultsView {
 	rounds?: RoundResult[];
 }
 
+export type DeadlineMode = 'none' | 'quick' | 'scheduled';
+
+// The active round's countdown, mirroring httpapi timerView. Absent when the
+// current round has no timer. Drive the countdown from closes_at vs the poll's
+// server_now (corrects device clock skew); total_sec sizes the ring + ramp.
+export interface TimerView {
+	mode: 'quick' | 'scheduled';
+	closes_at?: string; // RFC3339; absent when armed or paused
+	total_sec?: number; // full intended length of this round, seconds
+	paused_sec?: number; // remaining seconds while paused
+	armed?: boolean; // quick: configured but not yet started
+	running: boolean; // closes_at set and still in the future
+}
+
 export interface PollView {
 	code: string;
 	title: string;
@@ -86,6 +100,8 @@ export interface PollView {
 	me: MeView | null;
 	results?: ResultsView;
 	share_url: string;
+	timer?: TimerView | null;
+	server_now: string; // RFC3339, for client clock-skew correction
 }
 
 export interface LibraryItem {
@@ -118,4 +134,9 @@ export interface CreatePollBody {
 	genres: string[];
 	allow_writeins: boolean;
 	auto_request_winner: boolean;
+	deadline_mode?: DeadlineMode;
+	round1_duration_sec?: number; // quick mode
+	round2_duration_sec?: number; // quick mode
+	round1_closes_at?: string; // scheduled mode, RFC3339
+	round2_closes_at?: string; // scheduled mode, RFC3339
 }
