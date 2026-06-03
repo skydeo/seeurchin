@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -56,6 +57,11 @@ type createPollReq struct {
 	Genres            []string             `json:"genres"`
 	AllowWriteins     bool                 `json:"allow_writeins"`
 	AutoRequestWinner bool                 `json:"auto_request_winner"`
+	DeadlineMode      string               `json:"deadline_mode"`
+	Round1DurationSec int                  `json:"round1_duration_sec"`
+	Round2DurationSec int                  `json:"round2_duration_sec"`
+	Round1ClosesAt    *time.Time           `json:"round1_closes_at"`
+	Round2ClosesAt    *time.Time           `json:"round2_closes_at"`
 }
 
 // handleGenres lists the library's genres for a scope ("movie" | "series" |
@@ -94,6 +100,11 @@ func (s *Server) handleCreatePoll(w http.ResponseWriter, r *http.Request) {
 		Genres:            req.Genres,
 		AllowWriteins:     req.AllowWriteins,
 		AutoRequestWinner: req.AutoRequestWinner,
+		DeadlineMode:      poll.DeadlineMode(req.DeadlineMode),
+		Round1DurationSec: req.Round1DurationSec,
+		Round2DurationSec: req.Round2DurationSec,
+		Round1ClosesAt:    req.Round1ClosesAt,
+		Round2ClosesAt:    req.Round2ClosesAt,
 	})
 	if err != nil {
 		s.writeErr(w, err)

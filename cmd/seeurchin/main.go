@@ -81,6 +81,12 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	// Background sweeper: advances polls whose round timers have run out. Runs
+	// once per process (the SSE hub isn't multi-instance safe).
+	sweepCtx, stopSweeper := context.WithCancel(context.Background())
+	defer stopSweeper()
+	go srv.RunTimerSweeper(sweepCtx, time.Second)
+
 	go func() {
 		log.Printf("seeurchin listening on %s (public base URL %s)", cfg.Addr, cfg.BaseURL)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

@@ -3,10 +3,25 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/enderu/seeurchin/internal/poll"
 	"github.com/enderu/seeurchin/internal/voting"
 )
+
+// timerView is the active round's countdown as the client needs it: an absolute
+// ClosesAt to count down to (paired with the poll view's ServerNow so the
+// client can correct for clock skew), a TotalSec to size the ring + ramp, and
+// the paused/armed flags that drive the host controls. nil when the current
+// round has no timer.
+type timerView struct {
+	Mode      string     `json:"mode"`                // "quick" | "scheduled"
+	ClosesAt  *time.Time `json:"closes_at,omitempty"` // nil when armed or paused
+	TotalSec  int        `json:"total_sec,omitempty"` // full intended length of this round
+	PausedSec int        `json:"paused_sec,omitempty"`
+	Armed     bool       `json:"armed,omitempty"` // quick: configured but never started
+	Running   bool       `json:"running"`         // closes_at set and still in the future
+}
 
 // pollView is the client-facing representation of a poll's full state.
 type pollView struct {
@@ -33,6 +48,8 @@ type pollView struct {
 	Me                *meView              `json:"me"`
 	Results           *resultsView         `json:"results,omitempty"`
 	ShareURL          string               `json:"share_url"`
+	Timer             *timerView           `json:"timer,omitempty"`
+	ServerNow         time.Time            `json:"server_now"`
 }
 
 type nominationView struct {
@@ -96,7 +113,10 @@ func (s *Server) buildPollView(ctx context.Context, p *poll.Poll, me *poll.Parti
 		methodLabel = m.Label()
 	}
 
+	now := time.Now()
 	view := pollView{
+		Timer:             buildTimerView(p, now),
+		ServerNow:         now.UTC(),
 		Code:              p.Code,
 		Title:             p.Title,
 		Status:            string(p.Status),
@@ -187,6 +207,52 @@ func (s *Server) buildPollView(ctx context.Context, p *poll.Poll, me *poll.Parti
 	}
 
 	return view, nil
+}
+
+// buildTimerView computes the active round's countdown for the client, or nil
+// when the current round has no timer (so the UI keeps the manual advance CTA).
+// It works only from fields fixed at creation/transition plus now.
+func buildTimerView(p *poll.Poll, now time.Time) *timerView {
+	if p.DeadlineMode == poll.DeadlineNone {
+		return nil
+	}
+	var closesAt *time.Time
+	var durationSec int
+	switch p.Status {
+	case poll.StatusRound1:
+		closesAt, durationSec = p.Round1ClosesAt, p.Round1DurationSec
+	case poll.StatusRound2:
+		closesAt, durationSec = p.Round2ClosesAt, p.Round2DurationSec
+	default:
+		return nil // closed: no active timer
+	}
+
+	paused := p.TimerPausedSec
+	armed := p.DeadlineMode == poll.DeadlineQuick && durationSec > 0 && closesAt == nil && paused == 0
+	if closesAt == nil && paused == 0 && !armed {
+		return nil // this round has no timer (e.g. scheduled with an open round)
+	}
+
+	tv := &timerView{Mode: string(p.DeadlineMode), PausedSec: paused, Armed: armed}
+	switch p.DeadlineMode {
+	case poll.DeadlineQuick:
+		tv.TotalSec = durationSec
+	case poll.DeadlineScheduled:
+		start := p.CreatedAt
+		if p.Status == poll.StatusRound2 && p.Round1ClosesAt != nil {
+			start = *p.Round1ClosesAt
+		}
+		if closesAt != nil {
+			if total := int(closesAt.Sub(start).Seconds()); total > 0 {
+				tv.TotalSec = total
+			}
+		}
+	}
+	if closesAt != nil {
+		tv.ClosesAt = closesAt
+		tv.Running = closesAt.After(now)
+	}
+	return tv
 }
 
 // genresOrEmpty guarantees a non-nil slice so it serializes as [] not null.
