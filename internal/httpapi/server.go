@@ -75,6 +75,12 @@ func (s *Server) Routes() http.Handler {
 		})
 	})
 
+	// Poll routes get server-rendered Open Graph tags + a generated share card
+	// so links unfurl with a branded preview in chat apps. Registered before the
+	// SPA catch-all; real browsers still boot the SPA from the injected page.
+	r.Get("/p/{code}", s.handlePollPage)
+	r.Get("/p/{code}/preview.png", s.handlePollPreview)
+
 	// Everything else is the SPA / static assets.
 	r.Handle("/*", s.spaHandler())
 	return r
