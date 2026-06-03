@@ -183,7 +183,7 @@
 		<p class="mt-4 text-sm font-semibold text-muted">Your picks: {mine.map((n) => n.title).join(', ')}</p>
 	{/if}
 
-	{#if isHost}
+	{#if isHost && !poll.timer}
 		<div class="mt-8 rounded-[20px] border border-line bg-surface2 p-4">
 			<p class="text-[13px] font-semibold text-muted">
 				{#if isRandom}

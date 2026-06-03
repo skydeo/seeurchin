@@ -50,7 +50,7 @@
 			<a href="/" class="mt-4 inline-block font-bold text-accent hover:underline">← Back home</a>
 		</div>
 	{:else if poll}
-		<PollHeader {poll} />
+		<PollHeader {poll} {code} {update} />
 		{#if !poll.me}
 			<JoinForm {poll} {code} {update} />
 		{:else if poll.status === 'round1'}

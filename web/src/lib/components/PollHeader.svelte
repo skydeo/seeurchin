@@ -2,8 +2,14 @@
 	import type { PollView } from '$lib/types';
 	import UrchinMark from './UrchinMark.svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
+	import Countdown from './Countdown.svelte';
+	import HostTimerControls from './HostTimerControls.svelte';
 
-	let { poll }: { poll: PollView } = $props();
+	let {
+		poll,
+		code,
+		update
+	}: { poll: PollView; code: string; update: (p: PollView) => void } = $props();
 
 	let copied = $state(false);
 
@@ -68,6 +74,19 @@
 		<h1 class="font-display text-2xl font-semibold tracking-tight text-ink sm:text-[28px]">{poll.title}</h1>
 		<span class="pill {statusClass[poll.status]}">{statusLabel[poll.status]}</span>
 	</div>
+
+	{#if poll.timer}
+		<div class="mt-2.5">
+			<Countdown
+				timer={poll.timer}
+				serverNow={poll.server_now}
+				kind={poll.status === 'round1' ? 'nominate' : 'vote'}
+			/>
+		</div>
+		{#if poll.me?.is_host}
+			<HostTimerControls {poll} {code} {update} />
+		{/if}
+	{/if}
 
 	<div class="mt-2.5">
 		<button

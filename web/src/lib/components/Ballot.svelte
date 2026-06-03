@@ -213,7 +213,7 @@
 		<LiveResults {poll} />
 	{/if}
 
-	{#if isHost}
+	{#if isHost && !poll.timer}
 		<div class="rounded-[20px] border border-line bg-surface2 p-4">
 			<p class="text-[13px] font-semibold text-muted">{poll.voter_count} of {poll.participant_count} have voted.</p>
 			<button onclick={async () => update(await api.advance(code))} class="btn btn-coral mt-3 w-full">
