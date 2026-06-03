@@ -300,6 +300,33 @@ const run = async () => {
     await shot(host, 'random');
   }
 
+  // ================= BROWSE — type + genre filters (dark) =================
+  // The "Add titles" modal pairs the All/Movies/Shows type chips (teal) with a
+  // horizontally scrollable genre filter (amber); capture both active so the two
+  // colors read distinctly. A both-scope poll makes the type chips appear. The
+  // modal is a fixed overlay that scrolls internally, so this is a viewport shot.
+  console.log('browse (genre filter)…');
+  {
+    const { code: gc } = await apiCall(host, 'POST', '/api/polls', {
+      ...baseBody('approval', cfgOf('approval')),
+      library_scope: 'both'
+    });
+    // Nominate the demo's animated films so they read as "Picked" under the filter.
+    for (const title of ['Spider-Man: Across the Spider-Verse', 'Luca', 'Your Name']) {
+      const res = await apiCall(host, 'GET', `/api/polls/${gc}/library?q=${encodeURIComponent(title)}&type=`);
+      const hit = res.items.find((i) => i.image_tag) || res.items[0];
+      if (hit) await nominate(host, gc, hit);
+    }
+    await gotoPoll(host, gc, 'Nominations');
+    // Nominating clears the empty-state CTAs, so only the header button matches.
+    await host.getByRole('button', { name: /Add titles/ }).click();
+    await host.getByRole('button', { name: 'Movies', exact: true }).click().catch(() => {});
+    await host.getByRole('button', { name: 'Animation', exact: true }).click().catch(() => {});
+    await sleep(500); // let the debounced re-search settle
+    await waitPosters(host);
+    await shot(host, 'browse-genres', false); // viewport: focus on the filter chips
+  }
+
   await browser.close();
   console.log('\ndone.');
 };

@@ -48,10 +48,12 @@ Everything updates in real time via Server-Sent Events — no refreshing.
   **random pick**.
 - **Guest-friendly** — participants just enter a display name; no Jellyfin
   account needed. (Built behind an auth seam so Jellyfin login can be added.)
-- **Browse your real library** — poster-grid search, scoped to movies/shows,
-  optionally restricted to chosen **genres**. Posters are proxied through the
-  backend, so the browser never sees your Jellyfin URL or API key. Duplicate
-  library entries for the same title are collapsed automatically.
+- **Browse your real library** — poster-grid search, scoped to movies/shows and
+  optionally restricted to chosen **genres** for the whole poll. While browsing,
+  narrow the results on the fly with the type chips and a horizontally
+  scrollable **genre filter**. Posters are proxied through the backend, so the
+  browser never sees your Jellyfin URL or API key. Duplicate library entries for
+  the same title are collapsed automatically.
 - **Flexible self-voting** — allow, forbid, or cap how much voters may back
   their own picks; optionally reveal who nominated the winner.
 - **Write-ins via Seerr** *(optional)* — nominate titles you don't have yet by
@@ -67,6 +69,12 @@ Everything updates in real time via Server-Sent Events — no refreshing.
   external database.
 - **Modern Jellyfin auth** — uses the `Authorization: MediaBrowser` header, not
   the legacy schemes Jellyfin removes in 10.13.
+
+<table align="center">
+<tr>
+<td align="center"><img src="docs/screenshots/browse-genres.png" width="220" alt="Browse the library, filtered by type and genre" /><br /><sub><b>Browse</b> — filter by type (teal) &amp; a scrollable genre bar (amber)</sub></td>
+</tr>
+</table>
 
 ## Voting methods
 
@@ -213,7 +221,7 @@ session cookie obtained from create or join.
 | `POST` | `/api/polls` | Create a poll (creator becomes host). Returns the poll view + sets cookie. |
 | `GET` | `/api/polls/{code}` | Poll state, including your participation. |
 | `POST` | `/api/polls/{code}/join` | Join as a guest (`{display_name}`); sets cookie. |
-| `GET` | `/api/polls/{code}/library?q=&type=` | Search/browse the library (proxied). |
+| `GET` | `/api/polls/{code}/library?q=&type=&genre=` | Search/browse the library, optionally narrowed by type and genre (proxied). |
 | `GET` | `/api/polls/{code}/search-external?q=` | Search Seerr/TMDB for write-in titles (when enabled). |
 | `POST` | `/api/polls/{code}/nominations` | Nominate a library title (`{item_id}`) or a write-in (`{tmdb_id, media_type}`). |
 | `DELETE` | `/api/polls/{code}/nominations/{id}` | Withdraw your nomination. |

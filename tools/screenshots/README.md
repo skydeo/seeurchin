@@ -18,6 +18,7 @@ Output (390×844 @2x) is written to `../../docs/screenshots/`:
 | `vote-ranked.png` | Ranked-choice ballot |
 | `vote-score.png` | Star / score ballot |
 | `random.png` | Random-pick result (no ballot) |
+| `browse-genres.png` | "Add titles" modal — type + scrollable genre filter |
 
 ## Prerequisites
 
