@@ -48,6 +48,8 @@
 	let browseTab = $state<'library' | 'external'>('library');
 	let query = $state('');
 	let typeFilter = $state(''); // '', 'movie', 'series'
+	let genre = $state(''); // '' = all genres
+	let genres = $state<string[]>([]);
 	let items = $state<LibraryItem[]>([]);
 	let externalItems = $state<ExternalResult[]>([]);
 	let searching = $state(false);
@@ -58,7 +60,7 @@
 		searching = true;
 		searchError = '';
 		try {
-			items = (await api.library(code, query, typeFilter)).items;
+			items = (await api.library(code, query, typeFilter, genre)).items;
 		} catch (err) {
 			searchError = err instanceof Error ? err.message : 'search failed';
 		} finally {
@@ -87,6 +89,7 @@
 		// Track deps; debounce while the modal is open.
 		query;
 		typeFilter;
+		genre;
 		browseTab;
 		if (!browseOpen) return;
 		clearTimeout(timer);
@@ -115,9 +118,26 @@
 		}
 	}
 
+	// Genre chips filter the library tab. When the poll already restricts to a
+	// set of genres the library is limited to those, so offer them directly;
+	// otherwise list everything available for the poll's scope.
+	async function loadGenres() {
+		if (poll.genres.length > 0) {
+			genres = poll.genres;
+			return;
+		}
+		try {
+			genres = (await api.genres(poll.library_scope)).genres;
+		} catch {
+			genres = [];
+		}
+	}
+
 	function openBrowse() {
 		browseTab = 'library';
+		genre = '';
 		browseOpen = true;
+		loadGenres();
 	}
 </script>
 
@@ -228,6 +248,15 @@
 				<div class="mt-3 flex gap-2">
 					{#each [['', 'All'], ['movie', 'Movies'], ['series', 'Shows']] as [val, label] (val)}
 						<button onclick={() => (typeFilter = val)} class="chip" class:is-on={typeFilter === val}>{label}</button>
+					{/each}
+				</div>
+			{/if}
+
+			{#if browseTab === 'library' && genres.length > 1}
+				<div class="genre-scroll mt-3 flex gap-2 overflow-x-auto pb-1">
+					<button onclick={() => (genre = '')} class="chip chip-genre shrink-0" class:is-on={genre === ''}>All genres</button>
+					{#each genres as g (g)}
+						<button onclick={() => (genre = g)} class="chip chip-genre shrink-0" class:is-on={genre === g}>{g}</button>
 					{/each}
 				</div>
 			{/if}

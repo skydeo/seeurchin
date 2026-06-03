@@ -40,10 +40,12 @@ export const api = {
 	getPoll: (code: string) => req<PollView>('GET', `/api/polls/${code}`),
 	join: (code: string, display_name: string) =>
 		req<PollView>('POST', `/api/polls/${code}/join`, { display_name }),
-	library: (code: string, q: string, type: string) =>
+	library: (code: string, q: string, type: string, genre = '') =>
 		req<{ items: LibraryItem[]; total: number }>(
 			'GET',
-			`/api/polls/${code}/library?q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}`
+			`/api/polls/${code}/library?q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}${
+				genre ? `&genre=${encodeURIComponent(genre)}` : ''
+			}`
 		),
 	nominate: (code: string, item_id: string) =>
 		req<PollView>('POST', `/api/polls/${code}/nominations`, { item_id }),

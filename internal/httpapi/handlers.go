@@ -192,10 +192,20 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	}
 	start, _ := strconv.Atoi(r.URL.Query().Get("start"))
 
+	// An optional ?genre= narrows the browse within the poll's own genre
+	// restriction (if any). A poll that restricts to p.Genres still only lets
+	// you pick one of those; an unrestricted poll can filter to any genre.
+	genres := p.Genres
+	if g := strings.TrimSpace(r.URL.Query().Get("genre")); g != "" {
+		if len(p.Genres) == 0 || containsFold(p.Genres, g) {
+			genres = []string{g}
+		}
+	}
+
 	items, total, err := s.jf.Search(r.Context(), jellyfin.SearchParams{
 		Query:      strings.TrimSpace(r.URL.Query().Get("q")),
 		Types:      types,
-		Genres:     p.Genres,
+		Genres:     genres,
 		Limit:      limit,
 		StartIndex: start,
 	})
@@ -629,4 +639,14 @@ func scopeTypes(scope poll.LibraryScope) []string {
 	default:
 		return []string{"Movie", "Series"}
 	}
+}
+
+// containsFold reports whether s appears in list, case-insensitively.
+func containsFold(list []string, s string) bool {
+	for _, v := range list {
+		if strings.EqualFold(v, s) {
+			return true
+		}
+	}
+	return false
 }

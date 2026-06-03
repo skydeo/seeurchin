@@ -227,6 +227,19 @@ input[type='number']::-webkit-outer-spin-button {
 		border-color: var(--color-accent);
 		color: var(--color-accent-ink);
 	}
+	/* Genre filter chips: amber, to read distinctly from the teal type chips. */
+	.chip-genre.is-on {
+		background: color-mix(in srgb, var(--color-mango) 18%, transparent);
+		border-color: var(--color-mango);
+		color: #b8841a;
+	}
+	[data-theme='dark'] .chip-genre.is-on { color: var(--color-mango); }
+	/* Hide the scrollbar on the horizontally scrollable genre row. */
+	.genre-scroll {
+		scrollbar-width: none;
+		-webkit-overflow-scrolling: touch;
+	}
+	.genre-scroll::-webkit-scrollbar { display: none; }
 
 	/* ---- toggle switch ---- */
 	.switch {
