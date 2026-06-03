@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/enderu/seeurchin/internal/codes"
 	"github.com/enderu/seeurchin/internal/voting"
@@ -75,7 +76,24 @@ type CreatePollInput struct {
 	Genres            []string // restrict nominations to these genres (empty = any)
 	AllowWriteins     bool
 	AutoRequestWinner bool
+	// Deadline config. DeadlineMode selects the style; for "quick" the durations
+	// arm each round (host starts the clock); for "scheduled" the ClosesAt times
+	// are absolute. Leave zero for "none" (host advances manually).
+	DeadlineMode      DeadlineMode
+	Round1DurationSec int
+	Round2DurationSec int
+	Round1ClosesAt    *time.Time
+	Round2ClosesAt    *time.Time
 }
+
+// Timer bounds. A per-round timer is at least minTimerSec; "quick" durations
+// are capped at maxTimerSec and "scheduled" close times must fall within
+// maxScheduleAhead of now.
+const (
+	minTimerSec      = 5
+	maxTimerSec      = 30 * 24 * 3600 // 30 days
+	maxScheduleAhead = 365 * 24 * time.Hour
+)
 
 // CreatePoll validates input, opens a poll directly into round 1, and creates
 // the host participant. The returned host carries its session token.
@@ -143,6 +161,10 @@ func (s *Service) CreatePoll(ctx context.Context, in CreatePollInput) (*Poll, *P
 		AllowWriteins:     in.AllowWriteins,
 		AutoRequestWinner: in.AutoRequestWinner,
 	}
+	if err := applyDeadlineConfig(p, in, time.Now()); err != nil {
+		return nil, nil, err
+	}
+
 	host := &Participant{
 		ID:           NewID(),
 		DisplayName:  hostName,
@@ -153,6 +175,91 @@ func (s *Service) CreatePoll(ctx context.Context, in CreatePollInput) (*Poll, *P
 		return nil, nil, err
 	}
 	return p, host, nil
+}
+
+// applyDeadlineConfig validates the deadline input and sets the poll's timer
+// fields. "quick" arms per-round durations (ClosesAt stays nil until the host
+// starts the clock); "scheduled" sets absolute per-round close times that run
+// immediately. The poll's method matters: an AutoDecider (e.g. random) has no
+// round 2, so round-2 settings are ignored.
+func applyDeadlineConfig(p *Poll, in CreatePollInput, now time.Time) error {
+	switch in.DeadlineMode {
+	case DeadlineNone:
+		return nil
+
+	case DeadlineQuick:
+		_, autoDecide := voting.Decider(p.VotingMethod)
+		r1, r2 := in.Round1DurationSec, in.Round2DurationSec
+		if autoDecide {
+			r2 = 0 // no voting round to time
+		}
+		if r1 == 0 && r2 == 0 {
+			return errBad("set a timer length for at least one round")
+		}
+		if err := validateDuration("nomination", r1); err != nil {
+			return err
+		}
+		if err := validateDuration("voting", r2); err != nil {
+			return err
+		}
+		p.DeadlineMode = DeadlineQuick
+		p.Round1DurationSec = r1
+		p.Round2DurationSec = r2
+		// ClosesAt left nil: round 1 is armed until the host taps Start.
+		return nil
+
+	case DeadlineScheduled:
+		_, autoDecide := voting.Decider(p.VotingMethod)
+		r1, r2 := in.Round1ClosesAt, in.Round2ClosesAt
+		if autoDecide {
+			r2 = nil
+		}
+		if r1 == nil && r2 == nil {
+			return errBad("set a close time for at least one round")
+		}
+		if err := validateCloseTime("nomination", r1, now); err != nil {
+			return err
+		}
+		if err := validateCloseTime("voting", r2, now); err != nil {
+			return err
+		}
+		if r1 != nil && r2 != nil && !r1.Before(*r2) {
+			return errBad("nominations must close before voting")
+		}
+		p.DeadlineMode = DeadlineScheduled
+		p.Round1ClosesAt = r1
+		p.Round2ClosesAt = r2
+		return nil
+
+	default:
+		return errBad("invalid deadline mode %q", in.DeadlineMode)
+	}
+}
+
+func validateDuration(round string, sec int) error {
+	if sec == 0 {
+		return nil // that round is untimed
+	}
+	if sec < minTimerSec {
+		return errBad("%s timer must be at least %d seconds", round, minTimerSec)
+	}
+	if sec > maxTimerSec {
+		return errBad("%s timer is too long", round)
+	}
+	return nil
+}
+
+func validateCloseTime(round string, t *time.Time, now time.Time) error {
+	if t == nil {
+		return nil // that round is host-advanced
+	}
+	if !t.After(now.Add(minTimerSec * time.Second)) {
+		return errBad("%s close time must be in the future", round)
+	}
+	if t.After(now.Add(maxScheduleAhead)) {
+		return errBad("%s close time is too far in the future", round)
+	}
+	return nil
 }
 
 // cleanGenres trims, de-dupes (case-insensitively), and drops empty genre names,
@@ -381,11 +488,22 @@ func (s *Service) WithdrawNomination(ctx context.Context, p *Poll, participant *
 	return s.repo.WithdrawNomination(ctx, p.ID, nominationID, participant.ID)
 }
 
-// Advance moves the poll to the next stage. Only the host may advance.
+// Advance moves the poll to the next stage at the host's request (this also
+// backs the "end now" timer control). Only the host may advance.
 func (s *Service) Advance(ctx context.Context, p *Poll, participant *Participant) (*Poll, error) {
 	if !participant.IsHost() {
 		return nil, errForbid("only the host can advance the poll")
 	}
+	return s.advanceCore(ctx, p, false)
+}
+
+// advanceCore performs the actual round transition, shared by the host-driven
+// Advance and the timer sweeper. When auto is false and the poll has no timer,
+// round 1 still requires ≥2 nominations (the long-standing manual guard);
+// otherwise round 1 resolves gracefully — exactly one nomination is crowned the
+// winner, zero closes the poll empty. A CompareAndSetStatus claims each
+// transition so a manual advance and the sweeper can't double-advance.
+func (s *Service) advanceCore(ctx context.Context, p *Poll, auto bool) (*Poll, error) {
 	switch p.Status {
 	case StatusRound1:
 		noms, err := s.repo.ListNominations(ctx, p.ID)
@@ -393,7 +511,10 @@ func (s *Service) Advance(ctx context.Context, p *Poll, participant *Participant
 			return nil, err
 		}
 		if len(noms) < 2 {
-			return nil, errConflict("need at least 2 nominations to start voting")
+			if !auto && p.DeadlineMode == DeadlineNone {
+				return nil, errConflict("need at least 2 nominations to start voting")
+			}
+			return s.resolveSparseRound1(ctx, p, noms)
 		}
 		// Methods that decide without a voting round (e.g. random) close
 		// immediately: draw the winner once and freeze it.
@@ -406,29 +527,178 @@ func (s *Service) Advance(ctx context.Context, p *Poll, participant *Participant
 			if err != nil {
 				return nil, errBad("%v", err)
 			}
-			if err := s.repo.SetPollWinner(ctx, p.ID, winner); err != nil {
+			ok, err := s.repo.CompareAndSetStatus(ctx, p.ID, StatusRound1, StatusClosed)
+			if err != nil {
 				return nil, err
 			}
-			if err := s.repo.UpdatePollStatus(ctx, p.ID, StatusClosed); err != nil {
+			if !ok {
+				return s.repo.GetPollByID(ctx, p.ID) // already advanced concurrently
+			}
+			if err := s.repo.SetPollWinner(ctx, p.ID, winner); err != nil {
 				return nil, err
 			}
 			p.WinnerNominationID = winner
 			p.Status = StatusClosed
 			return p, nil
 		}
-		if err := s.repo.UpdatePollStatus(ctx, p.ID, StatusRound2); err != nil {
+		ok, err := s.repo.CompareAndSetStatus(ctx, p.ID, StatusRound1, StatusRound2)
+		if err != nil {
 			return nil, err
+		}
+		if !ok {
+			return s.repo.GetPollByID(ctx, p.ID)
 		}
 		p.Status = StatusRound2
-	case StatusRound2:
-		if err := s.repo.UpdatePollStatus(ctx, p.ID, StatusClosed); err != nil {
+		// Entering round 2: a "quick" poll starts the voting clock now; any
+		// paused state from round 1 is cleared.
+		p.TimerPausedSec = 0
+		if p.DeadlineMode == DeadlineQuick && p.Round2DurationSec > 0 {
+			t := time.Now().Add(time.Duration(p.Round2DurationSec) * time.Second)
+			p.Round2ClosesAt = &t
+		}
+		if err := s.repo.UpdatePollTimers(ctx, p); err != nil {
 			return nil, err
 		}
+		return p, nil
+	case StatusRound2:
+		ok, err := s.repo.CompareAndSetStatus(ctx, p.ID, StatusRound2, StatusClosed)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return s.repo.GetPollByID(ctx, p.ID)
+		}
 		p.Status = StatusClosed
+		return p, nil
 	default:
 		return nil, errConflict("the poll cannot be advanced from %q", p.Status)
 	}
+}
+
+// resolveSparseRound1 closes a round 1 that has too few nominations to vote on:
+// exactly one nomination is crowned the winner, zero closes empty.
+func (s *Service) resolveSparseRound1(ctx context.Context, p *Poll, noms []Nomination) (*Poll, error) {
+	ok, err := s.repo.CompareAndSetStatus(ctx, p.ID, StatusRound1, StatusClosed)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return s.repo.GetPollByID(ctx, p.ID)
+	}
+	p.Status = StatusClosed
+	if len(noms) == 1 {
+		if err := s.repo.SetPollWinner(ctx, p.ID, noms[0].ID); err != nil {
+			return nil, err
+		}
+		p.WinnerNominationID = noms[0].ID
+	}
 	return p, nil
+}
+
+// StartTimer starts (or resumes) the active round's clock. Host only; "quick"
+// mode. A paused timer resumes with its remaining time; an armed one runs for
+// its configured duration.
+func (s *Service) StartTimer(ctx context.Context, p *Poll, participant *Participant) (*Poll, error) {
+	if !participant.IsHost() {
+		return nil, errForbid("only the host can control the timer")
+	}
+	if p.Status != StatusRound1 && p.Status != StatusRound2 {
+		return nil, errConflict("the timer can't be started now")
+	}
+	now := time.Now()
+	switch {
+	case p.TimerPausedSec > 0: // resume
+		t := now.Add(time.Duration(p.TimerPausedSec) * time.Second)
+		p.setActiveClosesAt(&t)
+		p.TimerPausedSec = 0
+	case p.activeClosesAt() != nil:
+		return nil, errConflict("the timer is already running")
+	case p.activeDurationSec() > 0: // armed → start
+		t := now.Add(time.Duration(p.activeDurationSec()) * time.Second)
+		p.setActiveClosesAt(&t)
+	default:
+		return nil, errConflict("this round has no timer to start")
+	}
+	if err := s.repo.UpdatePollTimers(ctx, p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// PauseTimer freezes the active round's running clock, remembering how much
+// time was left. Host only.
+func (s *Service) PauseTimer(ctx context.Context, p *Poll, participant *Participant) (*Poll, error) {
+	if !participant.IsHost() {
+		return nil, errForbid("only the host can control the timer")
+	}
+	closesAt := p.activeClosesAt()
+	if closesAt == nil {
+		return nil, errConflict("there's no running timer to pause")
+	}
+	remaining := int(time.Until(*closesAt).Seconds())
+	if remaining < 1 {
+		remaining = 1
+	}
+	p.TimerPausedSec = remaining
+	p.setActiveClosesAt(nil)
+	if err := s.repo.UpdatePollTimers(ctx, p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// ExtendTimer adds time to the active round's timer, whether it's running,
+// paused, or armed. Host only.
+func (s *Service) ExtendTimer(ctx context.Context, p *Poll, participant *Participant, addSec int) (*Poll, error) {
+	if !participant.IsHost() {
+		return nil, errForbid("only the host can control the timer")
+	}
+	if addSec < 1 || addSec > maxTimerSec {
+		return nil, errBad("invalid amount of time to add")
+	}
+	switch {
+	case p.TimerPausedSec > 0:
+		p.TimerPausedSec += addSec
+	case p.activeClosesAt() != nil: // running
+		t := p.activeClosesAt().Add(time.Duration(addSec) * time.Second)
+		p.setActiveClosesAt(&t)
+	case p.activeDurationSec() > 0: // armed
+		switch p.Status {
+		case StatusRound1:
+			p.Round1DurationSec += addSec
+		case StatusRound2:
+			p.Round2DurationSec += addSec
+		}
+	default:
+		return nil, errConflict("this round has no timer to extend")
+	}
+	if err := s.repo.UpdatePollTimers(ctx, p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// SweepDueTimers advances every poll whose active round's timer has run out,
+// returning the polls that changed so the caller can broadcast / fire winner
+// auto-requests. It is the unguarded (non-host) path into advanceCore.
+func (s *Service) SweepDueTimers(ctx context.Context, now time.Time) ([]*Poll, error) {
+	polls, err := s.repo.ListActiveTimedPolls(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var changed []*Poll
+	for _, p := range polls {
+		closesAt := p.activeClosesAt()
+		if closesAt == nil || closesAt.After(now) {
+			continue
+		}
+		updated, err := s.advanceCore(ctx, p, true)
+		if err != nil {
+			return changed, err
+		}
+		changed = append(changed, updated)
+	}
+	return changed, nil
 }
 
 // CastVotes validates and records a participant's ballot for round 2.

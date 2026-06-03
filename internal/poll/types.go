@@ -33,6 +33,19 @@ const (
 	ScopeBoth   LibraryScope = "both"
 )
 
+// DeadlineMode is how a poll's rounds close. It is primarily a UI/behavior hint:
+// the engine always works from absolute Round{1,2}ClosesAt timestamps. "quick"
+// arms per-round durations the host starts; "scheduled" carries absolute
+// per-round close times set at creation. Both auto-advance when the clock runs
+// out; "none" is the legacy host-advances-manually behavior.
+type DeadlineMode string
+
+const (
+	DeadlineNone      DeadlineMode = ""
+	DeadlineQuick     DeadlineMode = "quick"
+	DeadlineScheduled DeadlineMode = "scheduled"
+)
+
 // Role distinguishes the poll host from ordinary participants.
 const (
 	RoleHost        = "host"
@@ -66,12 +79,55 @@ type Poll struct {
 	AllowWriteins     bool            `json:"allow_writeins"`      // allow nominating titles not in the library (via Seerr)
 	AutoRequestWinner bool            `json:"auto_request_winner"` // auto-request a winning write-in via Seerr on close
 	CreatedAt         time.Time       `json:"created_at"`
-	Round1ClosesAt    *time.Time      `json:"round1_closes_at,omitempty"`
-	Round2ClosesAt    *time.Time      `json:"round2_closes_at,omitempty"`
+	// Deadline / auto-advance. DeadlineMode picks the style; the durations are
+	// the armed length for "quick" rounds (used to stamp ClosesAt on start /
+	// advance); Round{1,2}ClosesAt are the absolute close times the sweeper acts
+	// on (nil = no timer / not yet started / paused). TimerPausedSec > 0 means
+	// the active round's timer is paused with that many seconds left.
+	DeadlineMode      DeadlineMode `json:"deadline_mode,omitempty"`
+	Round1DurationSec int          `json:"round1_duration_sec,omitempty"`
+	Round2DurationSec int          `json:"round2_duration_sec,omitempty"`
+	Round1ClosesAt    *time.Time   `json:"round1_closes_at,omitempty"`
+	Round2ClosesAt    *time.Time   `json:"round2_closes_at,omitempty"`
+	TimerPausedSec    int          `json:"timer_paused_sec,omitempty"`
 	// WinnerNominationID freezes the decided winner for non-deterministic or
 	// multi-round methods (e.g. random) so the outcome is stable across reads.
 	WinnerNominationID string     `json:"winner_nomination_id,omitempty"`
 	DecidedAt          *time.Time `json:"decided_at,omitempty"`
+}
+
+// activeClosesAt returns the close time of the round currently in progress
+// (round 1 or round 2), or nil if the poll has no active timed round.
+func (p *Poll) activeClosesAt() *time.Time {
+	switch p.Status {
+	case StatusRound1:
+		return p.Round1ClosesAt
+	case StatusRound2:
+		return p.Round2ClosesAt
+	}
+	return nil
+}
+
+// activeDurationSec returns the configured timer length of the round currently
+// in progress (round 1 or round 2), used by "quick" mode to (re)stamp ClosesAt.
+func (p *Poll) activeDurationSec() int {
+	switch p.Status {
+	case StatusRound1:
+		return p.Round1DurationSec
+	case StatusRound2:
+		return p.Round2DurationSec
+	}
+	return 0
+}
+
+// setActiveClosesAt sets the close time of the round currently in progress.
+func (p *Poll) setActiveClosesAt(t *time.Time) {
+	switch p.Status {
+	case StatusRound1:
+		p.Round1ClosesAt = t
+	case StatusRound2:
+		p.Round2ClosesAt = t
+	}
 }
 
 // RevealScope values for showing who nominated titles on the results screen.

@@ -11,6 +11,18 @@ type Repository interface {
 	GetPollByCode(ctx context.Context, code string) (*Poll, error)
 	GetPollByID(ctx context.Context, id string) (*Poll, error)
 	UpdatePollStatus(ctx context.Context, id string, status Status) error
+	// CompareAndSetStatus atomically moves a poll from one status to another,
+	// reporting whether the row was changed (false = it wasn't in `from`, so a
+	// concurrent advance already happened). Used to make round transitions safe
+	// against the timer sweeper racing a manual advance.
+	CompareAndSetStatus(ctx context.Context, id string, from, to Status) (bool, error)
+	// UpdatePollTimers persists the deadline-related fields (durations, close
+	// times, paused remainder) for a poll.
+	UpdatePollTimers(ctx context.Context, p *Poll) error
+	// ListActiveTimedPolls returns every poll currently in round 1 or round 2
+	// that has a close time set for its active round (i.e. a running timer). The
+	// caller decides which have actually expired.
+	ListActiveTimedPolls(ctx context.Context) ([]*Poll, error)
 	// SetPollWinner freezes the decided winner (for methods that decide without
 	// a voting round, e.g. random) and stamps decided_at.
 	SetPollWinner(ctx context.Context, id, nominationID string) error

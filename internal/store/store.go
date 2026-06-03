@@ -65,7 +65,11 @@ CREATE TABLE IF NOT EXISTS polls (
   auto_request_winner INTEGER NOT NULL DEFAULT 0,
   created_at          TEXT NOT NULL,
   round1_closes_at    TEXT,
-  round2_closes_at    TEXT
+  round2_closes_at    TEXT,
+  deadline_mode       TEXT NOT NULL DEFAULT '',
+  round1_duration_sec INTEGER NOT NULL DEFAULT 0,
+  round2_duration_sec INTEGER NOT NULL DEFAULT 0,
+  timer_paused_sec    INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS participants (
@@ -137,6 +141,10 @@ func (s *Store) addColumns(ctx context.Context) error {
 		{"polls", "decided_at", "TEXT"},
 		{"polls", "allow_writeins", "INTEGER NOT NULL DEFAULT 0"},
 		{"polls", "auto_request_winner", "INTEGER NOT NULL DEFAULT 0"},
+		{"polls", "deadline_mode", "TEXT NOT NULL DEFAULT ''"},
+		{"polls", "round1_duration_sec", "INTEGER NOT NULL DEFAULT 0"},
+		{"polls", "round2_duration_sec", "INTEGER NOT NULL DEFAULT 0"},
+		{"polls", "timer_paused_sec", "INTEGER NOT NULL DEFAULT 0"},
 	}
 	for _, c := range wanted {
 		has, err := s.columnExists(ctx, c.table, c.name)
@@ -240,13 +248,15 @@ func (s *Store) CreatePoll(ctx context.Context, p *poll.Poll, host *poll.Partici
 				submission_rules, voting_method, voting_config, allow_guests, results_live,
 				reveal_nominators, reveal_scope, genres, winner_nomination_id, decided_at,
 				allow_writeins, auto_request_winner,
-				created_at, round1_closes_at, round2_closes_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				created_at, round1_closes_at, round2_closes_at,
+				deadline_mode, round1_duration_sec, round2_duration_sec, timer_paused_sec)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			p.ID, p.Code, p.Title, p.HostParticipantID, string(p.LibraryScope), string(p.Status),
 			string(rules), p.VotingMethod, string(p.VotingConfig), boolToInt(p.AllowGuests), boolToInt(p.ResultsLive),
 			boolToInt(p.RevealNominators), p.RevealScope, string(genres), p.WinnerNominationID, timeText(p.DecidedAt),
 			boolToInt(p.AllowWriteins), boolToInt(p.AutoRequestWinner),
 			p.CreatedAt.UTC().Format(time.RFC3339Nano), timeText(p.Round1ClosesAt), timeText(p.Round2ClosesAt),
+			string(p.DeadlineMode), p.Round1DurationSec, p.Round2DurationSec, p.TimerPausedSec,
 		); err != nil {
 			return err
 		}
@@ -272,9 +282,10 @@ const pollSelect = `SELECT id, code, title, host_participant_id, library_scope, 
 	submission_rules, voting_method, voting_config, allow_guests, results_live,
 	reveal_nominators, reveal_scope, genres, winner_nomination_id, decided_at,
 	allow_writeins, auto_request_winner,
-	created_at, round1_closes_at, round2_closes_at FROM polls`
+	created_at, round1_closes_at, round2_closes_at,
+	deadline_mode, round1_duration_sec, round2_duration_sec, timer_paused_sec FROM polls`
 
-func (s *Store) scanPoll(row *sql.Row) (*poll.Poll, error) {
+func (s *Store) scanPoll(row rowScanner) (*poll.Poll, error) {
 	var (
 		p                                poll.Poll
 		scope, status, rules, vmethod    string
@@ -286,12 +297,15 @@ func (s *Store) scanPoll(row *sql.Row) (*poll.Poll, error) {
 		allowWriteins, autoRequestWinner int
 		createdAt                        string
 		r1, r2                           sql.NullString
+		deadlineMode                     string
+		r1Dur, r2Dur, pausedSec          int
 	)
 	err := row.Scan(&p.ID, &p.Code, &p.Title, &p.HostParticipantID, &scope, &status,
 		&rules, &vmethod, &vconfig, &allowGuests, &resultsLive,
 		&revealNominators, &revealScope, &genres, &winnerNomID, &decidedAt,
 		&allowWriteins, &autoRequestWinner,
-		&createdAt, &r1, &r2)
+		&createdAt, &r1, &r2,
+		&deadlineMode, &r1Dur, &r2Dur, &pausedSec)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, poll.ErrNotFound
 	}
@@ -313,6 +327,10 @@ func (s *Store) scanPoll(row *sql.Row) (*poll.Poll, error) {
 	p.CreatedAt = parseTime(createdAt)
 	p.Round1ClosesAt = parseNullTime(r1)
 	p.Round2ClosesAt = parseNullTime(r2)
+	p.DeadlineMode = poll.DeadlineMode(deadlineMode)
+	p.Round1DurationSec = r1Dur
+	p.Round2DurationSec = r2Dur
+	p.TimerPausedSec = pausedSec
 	p.Genres = []string{}
 	if genres != "" {
 		if err := json.Unmarshal([]byte(genres), &p.Genres); err != nil {
@@ -325,12 +343,67 @@ func (s *Store) scanPoll(row *sql.Row) (*poll.Poll, error) {
 	return &p, nil
 }
 
+// rowScanner is the common Scan surface of *sql.Row and *sql.Rows, so scanPoll
+// works for both single-row and multi-row queries.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
 func (s *Store) UpdatePollStatus(ctx context.Context, id string, status poll.Status) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE polls SET status = ? WHERE id = ?`, string(status), id)
 	if err != nil {
 		return err
 	}
 	return mustAffect(res)
+}
+
+// CompareAndSetStatus moves a poll from one status to another only if it is
+// currently in `from`, returning whether the row changed.
+func (s *Store) CompareAndSetStatus(ctx context.Context, id string, from, to poll.Status) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE polls SET status = ? WHERE id = ? AND status = ?`, string(to), id, string(from))
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// UpdatePollTimers persists the deadline-related columns for a poll.
+func (s *Store) UpdatePollTimers(ctx context.Context, p *poll.Poll) error {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE polls SET
+			deadline_mode = ?, round1_duration_sec = ?, round2_duration_sec = ?,
+			round1_closes_at = ?, round2_closes_at = ?, timer_paused_sec = ?
+		WHERE id = ?`,
+		string(p.DeadlineMode), p.Round1DurationSec, p.Round2DurationSec,
+		timeText(p.Round1ClosesAt), timeText(p.Round2ClosesAt), p.TimerPausedSec, p.ID)
+	if err != nil {
+		return err
+	}
+	return mustAffect(res)
+}
+
+// ListActiveTimedPolls returns polls in round 1 or round 2 whose active round
+// has a close time set (a running timer).
+func (s *Store) ListActiveTimedPolls(ctx context.Context) ([]*poll.Poll, error) {
+	rows, err := s.db.QueryContext(ctx, pollSelect+`
+		WHERE (status = ? AND round1_closes_at IS NOT NULL)
+		   OR (status = ? AND round2_closes_at IS NOT NULL)`,
+		string(poll.StatusRound1), string(poll.StatusRound2))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*poll.Poll
+	for rows.Next() {
+		p, err := s.scanPoll(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) SetPollWinner(ctx context.Context, id, nominationID string) error {
