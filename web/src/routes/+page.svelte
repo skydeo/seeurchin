@@ -36,6 +36,11 @@
 	let seerrEnabled = $state(false);
 	let allowWriteins = $state(true);
 	let autoRequestWinner = $state(true);
+	let deadlineMode = $state<'none' | 'quick' | 'scheduled'>('none');
+	let quickR1 = $state(120); // seconds (default 2 min)
+	let quickR2 = $state(120);
+	let schedR1 = $state(''); // datetime-local strings
+	let schedR2 = $state('');
 	let creating = $state(false);
 	let error = $state('');
 
@@ -109,6 +114,15 @@
 			allow_writeins: seerrEnabled && allowWriteins,
 			auto_request_winner: seerrEnabled && allowWriteins && autoRequestWinner
 		};
+		if (deadlineMode === 'quick') {
+			body.deadline_mode = 'quick';
+			body.round1_duration_sec = quickR1;
+			if (!isRandom) body.round2_duration_sec = quickR2;
+		} else if (deadlineMode === 'scheduled') {
+			body.deadline_mode = 'scheduled';
+			if (schedR1) body.round1_closes_at = new Date(schedR1).toISOString();
+			if (!isRandom && schedR2) body.round2_closes_at = new Date(schedR2).toISOString();
+		}
 		creating = true;
 		try {
 			const poll = await api.createPoll(body);
@@ -120,6 +134,25 @@
 	}
 
 	const num = (v: unknown) => Number(v ?? 0);
+
+	// Random has no voting round, so round-2 timer inputs are hidden for it.
+	const isRandom = $derived(method === 'random');
+
+	const quickPresets: [number, string][] = [
+		[30, '30s'],
+		[60, '1 min'],
+		[120, '2 min'],
+		[300, '5 min']
+	];
+	const deadlineOpts: [string, string][] = [
+		['none', 'No timer'],
+		['quick', 'Quick'],
+		['scheduled', 'Scheduled']
+	];
+	// "now" in the local-wall-clock format datetime-local expects, as a min bound.
+	const minDateTime = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+		.toISOString()
+		.slice(0, 16);
 
 	// Self-vote control maps to the method config's max_self_votes:
 	//   unlimited -> -1, none -> 0, limited -> N. Falls back to the legacy
@@ -317,6 +350,54 @@
 					{/if}
 				{/if}
 			</div>
+		</div>
+
+		<!-- Deadline / timer (optional) -->
+		<div>
+			<span class="mb-1.5 block text-sm font-bold text-muted">When does it close?</span>
+			<div class="flex gap-2">
+				{#each deadlineOpts as [val, label] (val)}
+					<button type="button" onclick={() => (deadlineMode = val as typeof deadlineMode)} class="opt flex-1" class:is-on={deadlineMode === val}>{label}</button>
+				{/each}
+			</div>
+
+			{#if deadlineMode === 'quick'}
+				<p class="mt-2 text-xs font-semibold text-faint">Snappy timers for when everyone's together — you start the clock when ready, and it auto-advances when time's up.</p>
+				<div class="mt-2.5 space-y-2.5">
+					<div>
+						<span class="mb-1 block text-xs font-bold text-muted">Time to nominate</span>
+						<div class="flex flex-wrap gap-2">
+							{#each quickPresets as [sec, label] (sec)}
+								<button type="button" onclick={() => (quickR1 = sec)} class="chip" class:is-on={quickR1 === sec}>{label}</button>
+							{/each}
+						</div>
+					</div>
+					{#if !isRandom}
+						<div>
+							<span class="mb-1 block text-xs font-bold text-muted">Time to vote</span>
+							<div class="flex flex-wrap gap-2">
+								{#each quickPresets as [sec, label] (sec)}
+									<button type="button" onclick={() => (quickR2 = sec)} class="chip" class:is-on={quickR2 === sec}>{label}</button>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				</div>
+			{:else if deadlineMode === 'scheduled'}
+				<p class="mt-2 text-xs font-semibold text-faint">Plan ahead — people nominate and vote on their own time. Leave a round blank to advance it yourself.</p>
+				<div class="mt-2.5 grid gap-3 sm:grid-cols-2">
+					<label class="block">
+						<span class="mb-1 block text-xs font-bold text-muted">Nominations close</span>
+						<input type="datetime-local" min={minDateTime} bind:value={schedR1} class="input" />
+					</label>
+					{#if !isRandom}
+						<label class="block">
+							<span class="mb-1 block text-xs font-bold text-muted">Voting closes</span>
+							<input type="datetime-local" min={minDateTime} bind:value={schedR2} class="input" />
+						</label>
+					{/if}
+				</div>
+			{/if}
 		</div>
 
 		<div class="space-y-1">
