@@ -65,6 +65,9 @@ Everything updates in real time via Server-Sent Events — no refreshing.
 - **Light & dark, theme-aware** — the "Reef" design system adapts to system,
   light, or dark with no flash of the wrong theme.
 - **Live updates** — counts, nominations, and results stream over SSE.
+- **Admin dashboard** *(optional)* — a token-gated `/admin` view of every poll's
+  history (status, counts, winner), with force-advance and delete, plus an
+  opt-in retention window. Off unless `SEEURCHIN_ADMIN_TOKEN` is set.
 - **Tiny footprint** — a single ~13 MB distroless image; pure-Go SQLite, no
   external database.
 - **Modern Jellyfin auth** — uses the `Authorization: MediaBrowser` header, not
@@ -188,6 +191,8 @@ All configuration is via environment variables.
 | `SEEURCHIN_DB_PATH` | no | `./seeurchin.db` | SQLite file path. Use a mounted volume (the image defaults to `/config`). |
 | `SEEURCHIN_CODE_STYLE` | no | `base32` | Share-code style. Only `base32` is implemented today (`words` is planned). |
 | `SEEURCHIN_ENABLE_USER_LOGIN` | no | `false` | Reserved for Jellyfin login (not yet implemented). |
+| `SEEURCHIN_ADMIN_TOKEN` | no | — | Enables the admin dashboard at `/admin` (cross-poll history + management). When unset the dashboard and every `/api/admin/*` route are disabled (404). Log in at `/admin` with this token. |
+| `SEEURCHIN_POLL_RETENTION_DAYS` | no | `0` | Auto-delete polls this many days after they close (cascading to their participants/nominations/votes). `0` (default) keeps history forever. |
 | `SEERR_URL` | no | — | Seerr/Overseerr/Jellyseerr base URL, e.g. `http://seerr:5055`. Set with `SEERR_API_KEY` to enable write-in nominations + winner auto-request. |
 | `SEERR_API_KEY` | no | — | Seerr API key (Settings → General → API Key). Use a dedicated account whose default profile is what you want requested; grant it auto-approve to have winners download without manual approval. |
 | `SEERR_USER_ID` | no | API key owner | Seerr user id to attribute requests to (e.g. a dedicated "movie night" account), using that user's defaults. |
@@ -215,7 +220,7 @@ session cookie obtained from create or join.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/health` | Liveness check. |
-| `GET` | `/api/features` | Optional capabilities, e.g. `{"seerr": true}`. |
+| `GET` | `/api/features` | Optional capabilities, e.g. `{"seerr": true, "admin": true}`. |
 | `GET` | `/api/methods` | Available voting methods and their default configs. |
 | `GET` | `/api/genres?scope=` | Library genres for a scope (`movie`/`series`/`both`), for the genre picker. |
 | `POST` | `/api/polls` | Create a poll (creator becomes host). Returns the poll view + sets cookie. |
@@ -231,6 +236,20 @@ session cookie obtained from create or join.
 | `GET` | `/api/polls/{code}/results` | Tally (when closed, or live if enabled). |
 | `GET` | `/api/polls/{code}/events` | SSE stream of poll updates. |
 | `GET` | `/api/items/{id}/image` | Poster image proxy. |
+
+Admin endpoints (only when `SEEURCHIN_ADMIN_TOKEN` is set; otherwise every path
+below is `404`). The session/login/logout endpoints are public; the rest require
+a valid admin cookie.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/admin/session` | Whether the caller is logged in (`{authenticated}`). |
+| `POST` | `/api/admin/login` | Exchange `{token}` for a signed admin cookie. |
+| `POST` | `/api/admin/logout` | Clear the admin cookie. |
+| `GET` | `/api/admin/polls` | All polls (newest first) with counts + winner. |
+| `GET` | `/api/admin/polls/{code}` | Full state of one poll (drill-down). |
+| `POST` | `/api/admin/polls/{code}/advance` | Force the poll's state machine forward. |
+| `DELETE` | `/api/admin/polls/{code}` | Delete a poll and all of its data. |
 
 Create-poll body:
 
@@ -363,7 +382,6 @@ tools/screenshots    Playwright generator for the README screenshots
   (`AuthenticateByName` + optional Quick Connect) using the modern auth header,
   with a per-poll "require login" toggle. The data model and auth seam are
   already in place.
-- **Per-round history + admin** — a management view across polls.
 - **Sudden-death runoff** and a **genre pre-round**.
 - **Word-style share codes** (`SEEURCHIN_CODE_STYLE=words`).
 - **Deadlines / auto-advance** between rounds.
