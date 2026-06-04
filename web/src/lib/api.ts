@@ -4,7 +4,9 @@ import type {
 	VotingMethod,
 	ResultsView,
 	CreatePollBody,
-	ExternalResult
+	ExternalResult,
+	AdminSession,
+	AdminPollSummary
 } from './types';
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -24,7 +26,7 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
 
 export const api = {
 	methods: () => req<VotingMethod[]>('GET', '/api/methods'),
-	features: () => req<{ seerr: boolean }>('GET', '/api/features'),
+	features: () => req<{ seerr: boolean; admin: boolean }>('GET', '/api/features'),
 	genres: (scope: string) =>
 		req<{ genres: string[] }>('GET', `/api/genres?scope=${encodeURIComponent(scope)}`),
 	searchExternal: (code: string, q: string) =>
@@ -61,5 +63,14 @@ export const api = {
 	results: (code: string) => req<ResultsView>('GET', `/api/polls/${code}/results`),
 	imageURL: (itemId: string, tag: string) =>
 		`/api/items/${itemId}/image?fillHeight=450&quality=90${tag ? `&tag=${encodeURIComponent(tag)}` : ''}`,
-	events: (code: string) => new EventSource(`/api/polls/${code}/events`)
+	events: (code: string) => new EventSource(`/api/polls/${code}/events`),
+
+	// Admin dashboard. adminSession throws (404) when the dashboard is disabled.
+	adminSession: () => req<AdminSession>('GET', '/api/admin/session'),
+	adminLogin: (token: string) => req<AdminSession>('POST', '/api/admin/login', { token }),
+	adminLogout: () => req<AdminSession>('POST', '/api/admin/logout'),
+	adminPolls: () => req<AdminPollSummary[]>('GET', '/api/admin/polls'),
+	adminPoll: (code: string) => req<PollView>('GET', `/api/admin/polls/${code}`),
+	adminDeletePoll: (code: string) => req<null>('DELETE', `/api/admin/polls/${code}`),
+	adminAdvance: (code: string) => req<AdminPollSummary>('POST', `/api/admin/polls/${code}/advance`)
 };

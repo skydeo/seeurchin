@@ -24,9 +24,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 // handleFeatures advertises optional capabilities so the create page can show
-// the right controls before a poll exists.
+// the right controls before a poll exists, and so the home page knows whether
+// to surface the admin link.
 func (s *Server) handleFeatures(w http.ResponseWriter, _ *http.Request) {
-	s.writeJSON(w, http.StatusOK, map[string]any{"seerr": s.seerrEnabled()})
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"seerr": s.seerrEnabled(),
+		"admin": s.cfg.AdminEnabled(),
+	})
 }
 
 type methodView struct {
