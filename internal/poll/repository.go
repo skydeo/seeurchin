@@ -1,6 +1,9 @@
 package poll
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Repository is the persistence contract for the poll domain. The sqlite
 // implementation lives in internal/store.
@@ -27,6 +30,20 @@ type Repository interface {
 	// a voting round, e.g. random) and stamps decided_at.
 	SetPollWinner(ctx context.Context, id, nominationID string) error
 	CodeExists(ctx context.Context, code string) (bool, error)
+
+	// ListPolls returns every poll, newest first, for the admin history view.
+	ListPolls(ctx context.Context) ([]*Poll, error)
+	// AllPollCounts returns the participant/nomination/voter tallies for every
+	// poll, keyed by poll ID, in a fixed number of grouped queries (no per-poll
+	// fan-out).
+	AllPollCounts(ctx context.Context) (map[string]PollCounts, error)
+	// DeletePoll removes a poll and (via ON DELETE CASCADE) all of its
+	// participants, nominations, votes, and Seerr requests.
+	DeletePoll(ctx context.Context, id string) error
+	// DeleteClosedPollsBefore deletes every closed poll whose end time
+	// (closed_at, or decided_at as a fallback) is before cutoff, returning how
+	// many were removed. Polls with no recorded end time are never purged.
+	DeleteClosedPollsBefore(ctx context.Context, cutoff time.Time) (int, error)
 
 	CreateParticipant(ctx context.Context, p *Participant) error
 	GetParticipant(ctx context.Context, id string) (*Participant, error)

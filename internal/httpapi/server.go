@@ -73,6 +73,24 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/events", s.handleEvents)
 		})
 		r.Get("/items/{id}/image", s.handleImage)
+
+		// Admin dashboard (poll history + management). The session/login/logout
+		// endpoints return their own 404 when no admin token is configured; the
+		// data endpoints are gated by requireAdmin (404 when disabled, 401 when
+		// not logged in).
+		r.Route("/admin", func(r chi.Router) {
+			r.Get("/session", s.handleAdminSession)
+			r.Post("/login", s.handleAdminLogin)
+			r.Post("/logout", s.handleAdminLogout)
+			r.Group(func(r chi.Router) {
+				r.Use(s.requireAdmin)
+				r.Get("/polls", s.handleAdminPolls)
+				r.Get("/polls/{code}", s.handleAdminPoll)
+				r.Delete("/polls/{code}", s.handleAdminDeletePoll)
+				r.Post("/polls/{code}/advance", s.handleAdminAdvance)
+			})
+		})
+
 		r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 			s.writeJSON(w, http.StatusNotFound, errResp{"not found"})
 		})

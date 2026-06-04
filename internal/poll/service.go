@@ -701,6 +701,51 @@ func (s *Service) SweepDueTimers(ctx context.Context, now time.Time) ([]*Poll, e
 	return changed, nil
 }
 
+// ListHistory returns every poll (newest first) with its aggregate counts, for
+// the admin dashboard.
+func (s *Service) ListHistory(ctx context.Context) ([]PollSummary, error) {
+	polls, err := s.repo.ListPolls(ctx)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := s.repo.AllPollCounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PollSummary, 0, len(polls))
+	for _, p := range polls {
+		out = append(out, PollSummary{Poll: p, Counts: counts[p.ID]})
+	}
+	return out, nil
+}
+
+// ForceAdvance moves a poll forward on the admin's behalf (no host check). It
+// uses the lenient auto path, so a round 1 with fewer than two nominations
+// resolves gracefully (crowns the single nomination, or closes empty) instead
+// of erroring as the host-driven Advance would.
+func (s *Service) ForceAdvance(ctx context.Context, p *Poll) (*Poll, error) {
+	if p.Status == StatusClosed {
+		return nil, errConflict("the poll is already closed")
+	}
+	return s.advanceCore(ctx, p, true)
+}
+
+// DeletePoll permanently removes a poll and all of its data.
+func (s *Service) DeletePoll(ctx context.Context, id string) error {
+	return s.repo.DeletePoll(ctx, id)
+}
+
+// PurgeExpired deletes closed polls that ended more than retentionDays ago,
+// returning how many were removed. retentionDays <= 0 disables retention and is
+// a no-op.
+func (s *Service) PurgeExpired(ctx context.Context, now time.Time, retentionDays int) (int, error) {
+	if retentionDays <= 0 {
+		return 0, nil
+	}
+	cutoff := now.Add(-time.Duration(retentionDays) * 24 * time.Hour)
+	return s.repo.DeleteClosedPollsBefore(ctx, cutoff)
+}
+
 // CastVotes validates and records a participant's ballot for round 2.
 func (s *Service) CastVotes(ctx context.Context, p *Poll, participant *Participant, selections map[string]int) error {
 	if p.Status != StatusRound2 {

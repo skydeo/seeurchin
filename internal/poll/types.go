@@ -94,6 +94,24 @@ type Poll struct {
 	// multi-round methods (e.g. random) so the outcome is stable across reads.
 	WinnerNominationID string     `json:"winner_nomination_id,omitempty"`
 	DecidedAt          *time.Time `json:"decided_at,omitempty"`
+	// ClosedAt is stamped when the poll transitions to "closed". Unlike DecidedAt
+	// (set only for methods that freeze a winner), it's set for every close, so
+	// it's the authoritative "when did this poll end" for retention/history.
+	ClosedAt *time.Time `json:"closed_at,omitempty"`
+}
+
+// PollCounts holds the aggregate tallies shown in the admin history list.
+type PollCounts struct {
+	Participants int
+	Nominations  int
+	Voters       int
+}
+
+// PollSummary pairs a poll with its aggregate counts for the admin history view,
+// avoiding a per-poll fan-out of count queries.
+type PollSummary struct {
+	Poll   *Poll
+	Counts PollCounts
 }
 
 // activeClosesAt returns the close time of the round currently in progress

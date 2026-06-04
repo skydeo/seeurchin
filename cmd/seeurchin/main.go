@@ -87,6 +87,16 @@ func main() {
 	defer stopSweeper()
 	go srv.RunTimerSweeper(sweepCtx, time.Second)
 
+	if cfg.AdminEnabled() {
+		log.Printf("admin dashboard enabled at %s/admin", cfg.BaseURL)
+	}
+	// Retention sweeper: opt-in, purges closed polls older than the configured
+	// window. Off by default (history is kept forever).
+	if cfg.PollRetentionDays > 0 {
+		log.Printf("poll retention: purging closed polls older than %d days", cfg.PollRetentionDays)
+		go srv.RunRetentionSweeper(sweepCtx, time.Hour)
+	}
+
 	go func() {
 		log.Printf("seeurchin listening on %s (public base URL %s)", cfg.Addr, cfg.BaseURL)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
