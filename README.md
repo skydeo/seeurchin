@@ -374,6 +374,12 @@ docs/                design-system.md + brand source masters
 tools/screenshots    Playwright generator for the README screenshots
 ```
 
+New to the backend (or to Go)? The
+[**backend walkthrough**](docs/go-walkthrough/README.md) is a chapter-by-chapter
+tour of the Go code aimed at developers coming from other API stacks — how the
+layers fit together, the request lifecycle, the voting-engine plugin system, the
+SSE hub, and the testing/build setup, with side-by-side comparisons throughout.
+
 ---
 
 ## Roadmap
