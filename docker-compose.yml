@@ -17,6 +17,13 @@ services:
       - SEEURCHIN_BASE_URL=${SEEURCHIN_BASE_URL:-http://localhost:5858}
       # Stable random secret so sessions survive restarts (e.g. `openssl rand -hex 32`).
       - SEEURCHIN_SESSION_SECRET=${SEEURCHIN_SESSION_SECRET:?set a random session secret}
+      # Require a Jellyfin login to create polls / request downloads (recommended
+      # when exposed publicly). Joining and voting stay open via the share link.
+      # - SEEURCHIN_ENABLE_USER_LOGIN=true
+      # Admin dashboard at /admin (needs SEEURCHIN_ENABLE_USER_LOGIN=true): a
+      # Jellyfin username allowlist and/or any Jellyfin administrator.
+      # - SEEURCHIN_ADMIN_USERS=alice,bob
+      # - SEEURCHIN_ADMIN_JELLYFIN_ADMINS=true
       # - SEEURCHIN_CODE_STYLE=base32
     volumes:
       - ./config/seeurchin:/config

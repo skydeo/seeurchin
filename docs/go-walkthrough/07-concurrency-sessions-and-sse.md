@@ -335,26 +335,34 @@ http.SetCookie(w, &http.Cookie{
 })
 ```
 
-### The admin cookie: same primitive, different shape
+### The Jellyfin identity cookie: same primitive, different shape
 
-The admin dashboard reuses the same `Sessions` signer with a single-value helper
-(`SignValue`/`VerifyValue`) instead of a map. Worth a glance for one nice security
-detail (`internal/httpapi/admin.go`):
+Optional Jellyfin login reuses the same `Sessions` signer with the single-value
+helper (`SignValue`/`VerifyValue`) instead of a map. After a successful
+`jellyfin.AuthenticateByName`, a second cookie (`seeurchin_user`) carries a
+signed JSON identity (`{uid, name, jfAdmin}`); `currentUser` verifies the
+signature and unmarshals it (`internal/httpapi/userauth.go`):
 
 ```go
-func adminFingerprint(token string) string {
-    sum := sha256.Sum256([]byte("seeurchin-admin:" + token))
-    return hex.EncodeToString(sum[:])
+func (s *Server) currentUser(r *http.Request) (*userIdentity, bool) {
+    c, err := r.Cookie(userCookieName)
+    if err != nil { return nil, false }
+    raw, ok := s.sessions.VerifyValue(c.Value)
+    if !ok { return nil, false }
+    var id userIdentity
+    if err := json.Unmarshal([]byte(raw), &id); err != nil || id.UserID == "" {
+        return nil, false
+    }
+    return &id, true
 }
 ```
 
-The admin cookie stores a *fingerprint* (a salted hash) of the current admin
-token, signed. A request is authenticated only when its cookie's fingerprint
-matches the fingerprint of the *current* `SEEURCHIN_ADMIN_TOKEN`. The payoff:
-**rotating the env token instantly invalidates every outstanding admin session**,
-with no server-side session list to clear. Login itself uses
-`subtle.ConstantTimeCompare` to check the submitted token — constant-time again,
-same reasoning as `hmac.Equal`.
+That one identity does double duty: `requireUser` gates the NAS-touching actions
+(poll creation, write-in request), and `requireAdmin` authorizes the admin
+dashboard from the same cookie — `isAdminUser` checks the name against
+`SEEURCHIN_ADMIN_USERS` (or the Jellyfin-admin flag). Because the cookie is only
+trusted via its HMAC signature, rotating `SEEURCHIN_SESSION_SECRET` invalidates
+every outstanding session at once, with no server-side session list to clear.
 
 ---
 
