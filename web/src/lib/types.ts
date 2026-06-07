@@ -93,6 +93,7 @@ export interface PollView {
 	genres: string[];
 	allow_writeins: boolean;
 	auto_request_winner: boolean;
+	passcode_required: boolean;
 	seerr_enabled: boolean;
 	participant_count: number;
 	voter_count: number;
@@ -120,10 +121,21 @@ export interface VotingMethod {
 	default_config: Record<string, unknown>;
 }
 
+// --- auth ---
+
+// Jellyfin login state, mirroring GET /api/user/session.
+export interface UserSession {
+	login_enabled: boolean;
+	authenticated: boolean;
+	display_name: string;
+	is_admin: boolean;
+}
+
 // --- admin dashboard ---
 
 export interface AdminSession {
 	authenticated: boolean;
+	authorized: boolean;
 }
 
 // One row of the admin history list, mirroring httpapi adminPollView.
@@ -156,6 +168,7 @@ export interface CreatePollBody {
 	genres: string[];
 	allow_writeins: boolean;
 	auto_request_winner: boolean;
+	passcode?: string; // optional per-poll guest passcode
 	deadline_mode?: DeadlineMode;
 	round1_duration_sec?: number; // quick mode
 	round2_duration_sec?: number; // quick mode

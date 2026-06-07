@@ -4,16 +4,12 @@
 	import type { AdminPollSummary, PollView } from '$lib/types';
 	import UrchinMark from '$lib/components/UrchinMark.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import JellyfinLogin from '$lib/components/JellyfinLogin.svelte';
 
-	type Phase = 'loading' | 'disabled' | 'login' | 'ready';
+	type Phase = 'loading' | 'disabled' | 'login' | 'unauthorized' | 'ready';
 	type StatusFilter = 'all' | 'round1' | 'round2' | 'closed';
 
 	let phase = $state<Phase>('loading');
-
-	// login
-	let token = $state('');
-	let loginError = $state('');
-	let loggingIn = $state(false);
 
 	// history
 	let polls = $state<AdminPollSummary[]>([]);
@@ -49,14 +45,22 @@
 	];
 
 	onMount(async () => {
+		await refreshSession();
+	});
+
+	async function refreshSession() {
 		try {
 			const sess = await api.adminSession();
-			phase = sess.authenticated ? 'ready' : 'login';
-			if (sess.authenticated) await load();
+			if (sess.authorized) {
+				phase = 'ready';
+				await load();
+			} else {
+				phase = sess.authenticated ? 'unauthorized' : 'login';
+			}
 		} catch {
-			phase = 'disabled'; // 404 — no admin token configured on the server
+			phase = 'disabled'; // 404 — admin dashboard not configured on the server
 		}
-	});
+	}
 
 	async function load() {
 		loadError = '';
@@ -67,26 +71,9 @@
 		}
 	}
 
-	async function login(e: Event) {
-		e.preventDefault();
-		if (loggingIn) return;
-		loginError = '';
-		loggingIn = true;
-		try {
-			await api.adminLogin(token.trim());
-			token = '';
-			phase = 'ready';
-			await load();
-		} catch (err) {
-			loginError = err instanceof Error ? err.message : 'login failed';
-		} finally {
-			loggingIn = false;
-		}
-	}
-
 	async function logout() {
 		try {
-			await api.adminLogout();
+			await api.userLogout();
 		} catch {
 			/* ignore */
 		}
@@ -199,35 +186,28 @@
 		<div class="card p-6 text-center">
 			<h1 class="font-display text-xl font-semibold text-ink">Admin dashboard isn't enabled</h1>
 			<p class="mt-2 text-sm font-semibold text-muted">
-				Set <code class="font-title font-bold text-ink">SEEURCHIN_ADMIN_TOKEN</code> on the server to
-				turn on the poll-history dashboard.
+				Enable Jellyfin login (<code class="font-title font-bold text-ink"
+					>SEEURCHIN_ENABLE_USER_LOGIN</code
+				>) and set <code class="font-title font-bold text-ink">SEEURCHIN_ADMIN_USERS</code> (or
+				<code class="font-title font-bold text-ink">SEEURCHIN_ADMIN_JELLYFIN_ADMINS</code>) on the
+				server to turn on the poll-history dashboard.
 			</p>
 		</div>
 	{:else if phase === 'login'}
 		<div class="mx-auto max-w-sm">
-			<div class="text-center">
-				<h1 class="font-display text-2xl font-semibold tracking-tight text-ink">Admin</h1>
-				<p class="mt-1.5 text-sm font-semibold text-muted">
-					Enter the admin token to view poll history.
-				</p>
-			</div>
-			<form onsubmit={login} class="card mt-5 space-y-4 p-5">
-				<label class="block">
-					<span class="mb-1.5 block text-sm font-bold text-muted">Admin token</span>
-					<input
-						bind:value={token}
-						type="password"
-						required
-						autocomplete="current-password"
-						placeholder="••••••••"
-						class="input"
-					/>
-				</label>
-				{#if loginError}<p class="text-sm font-semibold text-coral-ink">{loginError}</p>{/if}
-				<button type="submit" disabled={loggingIn} class="btn btn-primary w-full">
-					{loggingIn ? 'Checking…' : 'Log in'}
-				</button>
-			</form>
+			<JellyfinLogin
+				heading="Admin sign-in"
+				sub="Sign in with a Jellyfin admin account to view poll history."
+				onsuccess={refreshSession}
+			/>
+		</div>
+	{:else if phase === 'unauthorized'}
+		<div class="card mx-auto max-w-sm p-6 text-center">
+			<h1 class="font-display text-xl font-semibold text-ink">Not an admin account</h1>
+			<p class="mt-2 text-sm font-semibold text-muted">
+				You're signed in, but this Jellyfin account isn't allowed into the admin dashboard.
+			</p>
+			<button onclick={logout} class="btn btn-ghost mt-4">Sign in as someone else</button>
 		</div>
 	{:else}
 		<!-- ready: poll history -->
