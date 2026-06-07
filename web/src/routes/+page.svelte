@@ -2,9 +2,10 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
-	import type { VotingMethod, CreatePollBody } from '$lib/types';
+	import type { VotingMethod, CreatePollBody, UserSession } from '$lib/types';
 	import UrchinMark from '$lib/components/UrchinMark.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import JellyfinLogin from '$lib/components/JellyfinLogin.svelte';
 
 	// --- join by code ---
 	let joinCode = $state('');
@@ -35,8 +36,11 @@
 	let showGenres = $state(false); // genre picker is collapsed by default
 	let seerrEnabled = $state(false);
 	let adminEnabled = $state(false);
+	let userLoginEnabled = $state(false); // Jellyfin login required to create a poll
+	let loggedIn = $state(false);
 	let allowWriteins = $state(true);
 	let autoRequestWinner = $state(true);
+	let passcode = $state(''); // optional per-poll guest passcode
 	let deadlineMode = $state<'none' | 'quick' | 'scheduled'>('none');
 	let quickR1 = $state(120); // seconds (default 2 min)
 	let quickR2 = $state(120);
@@ -56,10 +60,25 @@
 			const features = await api.features();
 			seerrEnabled = features.seerr;
 			adminEnabled = features.admin;
+			userLoginEnabled = features.user_login;
 		} catch {
 			seerrEnabled = false;
 		}
+		if (userLoginEnabled) {
+			try {
+				const sess = await api.userSession();
+				loggedIn = sess.authenticated;
+				if (sess.authenticated && !hostName.trim()) hostName = sess.display_name;
+			} catch {
+				loggedIn = false;
+			}
+		}
 	});
+
+	function onLogin(s: UserSession) {
+		loggedIn = true;
+		if (!hostName.trim()) hostName = s.display_name;
+	}
 
 	function selectMethod(key: string) {
 		method = key;
@@ -115,7 +134,8 @@
 			reveal_scope: revealScope,
 			genres: selectedGenres,
 			allow_writeins: seerrEnabled && allowWriteins,
-			auto_request_winner: seerrEnabled && allowWriteins && autoRequestWinner
+			auto_request_winner: seerrEnabled && allowWriteins && autoRequestWinner,
+			passcode: allowGuests ? passcode.trim() : ''
 		};
 		if (deadlineMode === 'quick') {
 			body.deadline_mode = 'quick';
@@ -220,8 +240,16 @@
 		<div class="h-px flex-1 bg-line2"></div>
 	</div>
 
-	<!-- Create -->
-	<form onsubmit={create} class="card space-y-5 p-5 sm:p-6">
+	{#if userLoginEnabled && !loggedIn}
+		<!-- Creating a poll (which can request downloads) requires a Jellyfin login. -->
+		<JellyfinLogin
+			heading="Sign in to start a poll"
+			sub="Creating a poll uses your Jellyfin account. Guests can still join and vote with just the link."
+			onsuccess={onLogin}
+		/>
+	{:else}
+		<!-- Create -->
+		<form onsubmit={create} class="card space-y-5 p-5 sm:p-6">
 		<div class="grid gap-4 sm:grid-cols-2">
 			<label class="block">
 				<span class="mb-1.5 block text-sm font-bold text-muted">Poll name</span>
@@ -408,6 +436,18 @@
 				<span class="font-semibold text-ink">Allow guests <span class="text-faint">(no account needed)</span></span>
 				<span class="switch" role="switch" aria-checked={allowGuests}></span>
 			</button>
+			{#if allowGuests}
+				<label class="flex items-center justify-between gap-3 pl-1 py-1 text-sm">
+					<span class="font-semibold text-muted">Guest passcode <span class="text-faint">(optional)</span></span>
+					<input
+						bind:value={passcode}
+						autocomplete="off"
+						maxlength="40"
+						placeholder="none"
+						class="input w-40 px-2 py-1.5"
+					/>
+				</label>
+			{/if}
 			{#if method !== 'random'}
 				<button type="button" onclick={() => (resultsLive = !resultsLive)} class="flex w-full items-center justify-between gap-3 py-1 text-left text-sm">
 					<span class="font-semibold text-ink">Show live results during voting</span>
@@ -446,7 +486,8 @@
 		<button type="submit" disabled={creating} class="btn btn-primary w-full">
 			{creating ? 'Creating…' : 'Create poll'}
 		</button>
-	</form>
+		</form>
+	{/if}
 
 	<p class="mt-6 text-center text-xs font-semibold text-faint">self-hosted movie voting for your Jellyfin library</p>
 	{#if adminEnabled}

@@ -10,6 +10,7 @@
 	}: { poll: PollView; code: string; update: (p: PollView) => void } = $props();
 
 	let name = $state('');
+	let passcode = $state('');
 	let busy = $state(false);
 	let error = $state('');
 
@@ -19,7 +20,7 @@
 		busy = true;
 		error = '';
 		try {
-			update(await api.join(code, name.trim()));
+			update(await api.join(code, name.trim(), passcode.trim()));
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'could not join';
 		} finally {
@@ -41,6 +42,15 @@
 				autocomplete="off"
 				class="input text-center text-lg"
 			/>
+			{#if poll.passcode_required}
+				<input
+					bind:value={passcode}
+					maxlength="40"
+					placeholder="Passcode"
+					autocomplete="off"
+					class="input text-center"
+				/>
+			{/if}
 			{#if error}<p class="text-sm font-semibold text-coral-ink">{error}</p>{/if}
 			<button type="submit" disabled={busy || !name.trim()} class="btn btn-primary w-full">
 				{busy ? 'Joining…' : 'Join'}

@@ -47,7 +47,9 @@ Everything updates in real time via Server-Sent Events — no refreshing.
   engine so new methods are a single registration — including a no-vote
   **random pick**.
 - **Guest-friendly** — participants just enter a display name; no Jellyfin
-  account needed. (Built behind an auth seam so Jellyfin login can be added.)
+  account needed to join and vote. Optionally require a **Jellyfin login** to
+  *create* a poll or request downloads (see Access control), and/or set a
+  **per-poll passcode** to keep random link-finders out.
 - **Browse your real library** — poster-grid search, scoped to movies/shows and
   optionally restricted to chosen **genres** for the whole poll. While browsing,
   narrow the results on the fly with the type chips and a horizontally
@@ -65,9 +67,10 @@ Everything updates in real time via Server-Sent Events — no refreshing.
 - **Light & dark, theme-aware** — the "Reef" design system adapts to system,
   light, or dark with no flash of the wrong theme.
 - **Live updates** — counts, nominations, and results stream over SSE.
-- **Admin dashboard** *(optional)* — a token-gated `/admin` view of every poll's
-  history (status, counts, winner), with force-advance and delete, plus an
-  opt-in retention window. Off unless `SEEURCHIN_ADMIN_TOKEN` is set.
+- **Admin dashboard** *(optional)* — an `/admin` view of every poll's history
+  (status, counts, winner), with force-advance and delete, plus an opt-in
+  retention window. Gated by your **Jellyfin account** (a username allowlist or
+  any Jellyfin admin) — see Access control.
 - **Tiny footprint** — a single ~13 MB distroless image; pure-Go SQLite, no
   external database.
 - **Modern Jellyfin auth** — uses the `Authorization: MediaBrowser` header, not
@@ -190,8 +193,9 @@ All configuration is via environment variables.
 | `SEEURCHIN_ADDR` | no | `:5858` | TCP listen address. |
 | `SEEURCHIN_DB_PATH` | no | `./seeurchin.db` | SQLite file path. Use a mounted volume (the image defaults to `/config`). |
 | `SEEURCHIN_CODE_STYLE` | no | `base32` | Share-code style. Only `base32` is implemented today (`words` is planned). |
-| `SEEURCHIN_ENABLE_USER_LOGIN` | no | `false` | Reserved for Jellyfin login (not yet implemented). |
-| `SEEURCHIN_ADMIN_TOKEN` | no | — | Enables the admin dashboard at `/admin` (cross-poll history + management). When unset the dashboard and every `/api/admin/*` route are disabled (404). Log in at `/admin` with this token. |
+| `SEEURCHIN_ENABLE_USER_LOGIN` | no | `false` | Require a **Jellyfin login** to create a poll and to request a winning write-in (the actions that can trigger NAS downloads). Joining/voting stay open via the share link. When off (default), those actions are unauthenticated. |
+| `SEEURCHIN_ADMIN_USERS` | no | — | Comma-separated Jellyfin usernames (case-insensitive) allowed into the admin dashboard at `/admin`. Requires `SEEURCHIN_ENABLE_USER_LOGIN=true`. |
+| `SEEURCHIN_ADMIN_JELLYFIN_ADMINS` | no | `false` | Also grant admin access to any account flagged as a Jellyfin administrator. Requires `SEEURCHIN_ENABLE_USER_LOGIN=true`. |
 | `SEEURCHIN_POLL_RETENTION_DAYS` | no | `0` | Auto-delete polls this many days after they close (cascading to their participants/nominations/votes). `0` (default) keeps history forever. |
 | `SEERR_URL` | no | — | Seerr/Overseerr/Jellyseerr base URL, e.g. `http://seerr:5055`. Set with `SEERR_API_KEY` to enable write-in nominations + winner auto-request. |
 | `SEERR_API_KEY` | no | — | Seerr API key (Settings → General → API Key). Use a dedicated account whose default profile is what you want requested; grant it auto-approve to have winners download without manual approval. |
@@ -209,6 +213,27 @@ auto-requested through Seerr — each per-poll toggleable. The request is made b
 the account that owns the API key, using its default (or the configured) quality
 profile; it only downloads automatically if that account is set to auto-approve.
 
+### Access control
+
+seeurchin is designed to be shared with people outside your network, so its
+gating is split by what each action can do:
+
+- **Joining, nominating, and voting** are open to anyone with the share link —
+  optionally narrowed by a **per-poll passcode** the host sets at creation (a
+  soft gate against random link-finders; it never touches your NAS).
+- **Creating a poll** and **requesting a winning write-in** are the only actions
+  that can reach Seerr and trigger a download. Set
+  `SEEURCHIN_ENABLE_USER_LOGIN=true` to require a **Jellyfin login** for them, so
+  only people with an account on your server can cause downloads. Guests can
+  still suggest off-library titles; the logged-in host who enabled
+  auto-request (or who clicks "request") owns the consequence.
+- **Admin** (`/admin`) is authorized from that same Jellyfin identity: list the
+  usernames you trust in `SEEURCHIN_ADMIN_USERS`, and/or set
+  `SEEURCHIN_ADMIN_JELLYFIN_ADMINS=true` to admit any Jellyfin administrator.
+
+For a public deployment, also consider rate-limiting `/api/user/login` (e.g. a
+Cloudflare rule) on top of the small built-in per-IP throttle.
+
 ---
 
 ## API
@@ -220,32 +245,33 @@ session cookie obtained from create or join.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/health` | Liveness check. |
-| `GET` | `/api/features` | Optional capabilities, e.g. `{"seerr": true, "admin": true}`. |
+| `GET` | `/api/features` | Optional capabilities, e.g. `{"seerr": true, "admin": true, "user_login": true}`. |
 | `GET` | `/api/methods` | Available voting methods and their default configs. |
 | `GET` | `/api/genres?scope=` | Library genres for a scope (`movie`/`series`/`both`), for the genre picker. |
-| `POST` | `/api/polls` | Create a poll (creator becomes host). Returns the poll view + sets cookie. |
+| `GET` | `/api/user/session` | Jellyfin login state (`{login_enabled, authenticated, display_name, is_admin}`). |
+| `POST` | `/api/user/login` | Log in with Jellyfin (`{username, password}`); sets the identity cookie. |
+| `POST` | `/api/user/logout` | Clear the Jellyfin identity cookie. |
+| `POST` | `/api/polls` | Create a poll (creator becomes host). Requires Jellyfin login when enabled. Sets cookie. |
 | `GET` | `/api/polls/{code}` | Poll state, including your participation. |
-| `POST` | `/api/polls/{code}/join` | Join as a guest (`{display_name}`); sets cookie. |
+| `POST` | `/api/polls/{code}/join` | Join as a guest (`{display_name}`, plus `{passcode}` when the poll requires one); sets cookie. |
 | `GET` | `/api/polls/{code}/library?q=&type=&genre=` | Search/browse the library, optionally narrowed by type and genre (proxied). |
 | `GET` | `/api/polls/{code}/search-external?q=` | Search Seerr/TMDB for write-in titles (when enabled). |
 | `POST` | `/api/polls/{code}/nominations` | Nominate a library title (`{item_id}`) or a write-in (`{tmdb_id, media_type}`). |
 | `DELETE` | `/api/polls/{code}/nominations/{id}` | Withdraw your nomination. |
 | `POST` | `/api/polls/{code}/advance` | Host: advance the poll (round1 → round2 → closed). |
 | `POST` | `/api/polls/{code}/votes` | Cast/replace your ballot (`{selections}`). |
-| `POST` | `/api/polls/{code}/request/{id}` | Host: request a winning write-in via Seerr. |
+| `POST` | `/api/polls/{code}/request/{id}` | Host: request a winning write-in via Seerr. Requires Jellyfin login when enabled. |
 | `GET` | `/api/polls/{code}/results` | Tally (when closed, or live if enabled). |
 | `GET` | `/api/polls/{code}/events` | SSE stream of poll updates. |
 | `GET` | `/api/items/{id}/image` | Poster image proxy. |
 
-Admin endpoints (only when `SEEURCHIN_ADMIN_TOKEN` is set; otherwise every path
-below is `404`). The session/login/logout endpoints are public; the rest require
-a valid admin cookie.
+Admin endpoints (only when the dashboard is enabled — see Access control;
+otherwise every path below is `404`). Sign-in is the shared `/api/user/login`;
+the data endpoints require a Jellyfin identity authorized for admin.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/admin/session` | Whether the caller is logged in (`{authenticated}`). |
-| `POST` | `/api/admin/login` | Exchange `{token}` for a signed admin cookie. |
-| `POST` | `/api/admin/logout` | Clear the admin cookie. |
+| `GET` | `/api/admin/session` | Whether the caller is signed in and authorized (`{authenticated, authorized}`). |
 | `GET` | `/api/admin/polls` | All polls (newest first) with counts + winner. |
 | `GET` | `/api/admin/polls/{code}` | Full state of one poll (drill-down). |
 | `POST` | `/api/admin/polls/{code}/advance` | Force the poll's state machine forward. |
@@ -352,9 +378,10 @@ docker build -t seeurchin:latest .
   [`docs/design-system.md`](docs/design-system.md).
 - **Live updates:** Server-Sent Events via an in-memory hub keyed by poll.
 - **Sessions:** HMAC-signed, HTTP-only cookie holding a per-poll token map.
-- **Identity:** guest provider now, behind an `auth.Provider` seam; participants
-  already carry a nullable `jellyfin_user_id` so Jellyfin login can be added
-  without a schema migration.
+- **Identity:** guests by default behind an `auth.Provider` seam, plus optional
+  Jellyfin login (`AuthenticateByName`) gating poll creation / write-in requests
+  and authorizing admin; `participants.jellyfin_user_id` records the signed-in
+  host.
 
 ### Project layout
 
@@ -384,10 +411,9 @@ SSE hub, and the testing/build setup, with side-by-side comparisons throughout.
 
 ## Roadmap
 
-- **Jellyfin login** — authenticate participants against Jellyfin
-  (`AuthenticateByName` + optional Quick Connect) using the modern auth header,
-  with a per-poll "require login" toggle. The data model and auth seam are
-  already in place.
+- **Quick Connect login** — extend the Jellyfin login (already shipped via
+  `AuthenticateByName`) with Jellyfin's Quick Connect for passwordless sign-in,
+  and per-user Seerr request attribution.
 - **Sudden-death runoff** and a **genre pre-round**.
 - **Word-style share codes** (`SEEURCHIN_CODE_STYLE=words`).
 - **Deadlines / auto-advance** between rounds.

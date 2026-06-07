@@ -5,6 +5,7 @@ import type {
 	ResultsView,
 	CreatePollBody,
 	ExternalResult,
+	UserSession,
 	AdminSession,
 	AdminPollSummary
 } from './types';
@@ -26,7 +27,8 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
 
 export const api = {
 	methods: () => req<VotingMethod[]>('GET', '/api/methods'),
-	features: () => req<{ seerr: boolean; admin: boolean }>('GET', '/api/features'),
+	features: () =>
+		req<{ seerr: boolean; admin: boolean; user_login: boolean }>('GET', '/api/features'),
 	genres: (scope: string) =>
 		req<{ genres: string[] }>('GET', `/api/genres?scope=${encodeURIComponent(scope)}`),
 	searchExternal: (code: string, q: string) =>
@@ -40,8 +42,8 @@ export const api = {
 		req<PollView>('POST', `/api/polls/${code}/request/${nominationId}`),
 	createPoll: (body: CreatePollBody) => req<PollView>('POST', '/api/polls', body),
 	getPoll: (code: string) => req<PollView>('GET', `/api/polls/${code}`),
-	join: (code: string, display_name: string) =>
-		req<PollView>('POST', `/api/polls/${code}/join`, { display_name }),
+	join: (code: string, display_name: string, passcode = '') =>
+		req<PollView>('POST', `/api/polls/${code}/join`, { display_name, passcode }),
 	library: (code: string, q: string, type: string, genre = '') =>
 		req<{ items: LibraryItem[]; total: number }>(
 			'GET',
@@ -65,10 +67,16 @@ export const api = {
 		`/api/items/${itemId}/image?fillHeight=450&quality=90${tag ? `&tag=${encodeURIComponent(tag)}` : ''}`,
 	events: (code: string) => new EventSource(`/api/polls/${code}/events`),
 
-	// Admin dashboard. adminSession throws (404) when the dashboard is disabled.
+	// Jellyfin login. Gates poll creation + write-in requests, and authorizes
+	// admin access. userSession always succeeds (reports login_enabled).
+	userSession: () => req<UserSession>('GET', '/api/user/session'),
+	userLogin: (username: string, password: string) =>
+		req<UserSession>('POST', '/api/user/login', { username, password }),
+	userLogout: () => req<{ authenticated: boolean }>('POST', '/api/user/logout'),
+
+	// Admin dashboard. adminSession throws (404) when the dashboard is disabled;
+	// sign-in is the shared Jellyfin login above.
 	adminSession: () => req<AdminSession>('GET', '/api/admin/session'),
-	adminLogin: (token: string) => req<AdminSession>('POST', '/api/admin/login', { token }),
-	adminLogout: () => req<AdminSession>('POST', '/api/admin/logout'),
 	adminPolls: () => req<AdminPollSummary[]>('GET', '/api/admin/polls'),
 	adminPoll: (code: string) => req<PollView>('GET', `/api/admin/polls/${code}`),
 	adminDeletePoll: (code: string) => req<null>('DELETE', `/api/admin/polls/${code}`),

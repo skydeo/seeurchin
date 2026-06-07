@@ -41,6 +41,7 @@ type pollView struct {
 	Genres            []string             `json:"genres"`
 	AllowWriteins     bool                 `json:"allow_writeins"`
 	AutoRequestWinner bool                 `json:"auto_request_winner"`
+	PasscodeRequired  bool                 `json:"passcode_required"`
 	SeerrEnabled      bool                 `json:"seerr_enabled"`
 	ParticipantCount  int                  `json:"participant_count"`
 	VoterCount        int                  `json:"voter_count"`
@@ -133,6 +134,7 @@ func (s *Server) buildPollView(ctx context.Context, p *poll.Poll, me *poll.Parti
 		Genres:            genresOrEmpty(p.Genres),
 		AllowWriteins:     p.AllowWriteins,
 		AutoRequestWinner: p.AutoRequestWinner,
+		PasscodeRequired:  p.PasscodeHash != "",
 		SeerrEnabled:      s.seerrEnabled(),
 		ParticipantCount:  len(participants),
 		VoterCount:        voterCount,

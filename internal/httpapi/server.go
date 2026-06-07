@@ -25,19 +25,20 @@ const cookieName = "seeurchin_session"
 
 // Server wires the HTTP handlers to their dependencies.
 type Server struct {
-	cfg      config.Config
-	svc      *poll.Service
-	repo     poll.Repository
-	jf       *jellyfin.Client
-	seerr    *seerr.Client // nil when Seerr is not configured
-	sessions *auth.Sessions
-	hub      *Hub
+	cfg          config.Config
+	svc          *poll.Service
+	repo         poll.Repository
+	jf           *jellyfin.Client
+	seerr        *seerr.Client // nil when Seerr is not configured
+	sessions     *auth.Sessions
+	hub          *Hub
+	loginLimiter *loginLimiter
 }
 
 // NewServer constructs a Server. sr may be nil, which disables write-in /
 // Seerr-request features.
 func NewServer(cfg config.Config, svc *poll.Service, repo poll.Repository, jf *jellyfin.Client, sr *seerr.Client, sessions *auth.Sessions, hub *Hub) *Server {
-	return &Server{cfg: cfg, svc: svc, repo: repo, jf: jf, seerr: sr, sessions: sessions, hub: hub}
+	return &Server{cfg: cfg, svc: svc, repo: repo, jf: jf, seerr: sr, sessions: sessions, hub: hub, loginLimiter: newLoginLimiter()}
 }
 
 // seerrEnabled reports whether Seerr-backed features (write-ins, auto-request)
@@ -55,7 +56,15 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/features", s.handleFeatures)
 		r.Get("/methods", s.handleMethods)
 		r.Get("/genres", s.handleGenres)
-		r.Post("/polls", s.handleCreatePoll)
+
+		// Jellyfin user login. Identity gates the NAS-touching actions (poll
+		// creation, write-in request) and authorizes admin access. When
+		// SEEURCHIN_ENABLE_USER_LOGIN is off, requireUser is a no-op.
+		r.Get("/user/session", s.handleUserSession)
+		r.Post("/user/login", s.handleUserLogin)
+		r.Post("/user/logout", s.handleUserLogout)
+
+		r.With(s.requireUser).Post("/polls", s.handleCreatePoll)
 		r.Route("/polls/{code}", func(r chi.Router) {
 			r.Get("/", s.handleGetPoll)
 			r.Post("/join", s.handleJoin)
@@ -68,20 +77,19 @@ func (s *Server) Routes() http.Handler {
 			r.Post("/timer/pause", s.handleTimerPause)
 			r.Post("/timer/extend", s.handleTimerExtend)
 			r.Post("/votes", s.handleVote)
-			r.Post("/request/{id}", s.handleRequestWinner)
+			r.With(s.requireUser).Post("/request/{id}", s.handleRequestWinner)
 			r.Get("/results", s.handleResults)
 			r.Get("/events", s.handleEvents)
 		})
 		r.Get("/items/{id}/image", s.handleImage)
 
-		// Admin dashboard (poll history + management). The session/login/logout
-		// endpoints return their own 404 when no admin token is configured; the
-		// data endpoints are gated by requireAdmin (404 when disabled, 401 when
-		// not logged in).
+		// Admin dashboard (poll history + management). Sign-in is the shared
+		// Jellyfin login (/api/user/*); admin is an authorization check on that
+		// identity. handleAdminSession 404s when the dashboard isn't configured;
+		// the data endpoints are gated by requireAdmin (404 disabled, 401 not
+		// signed in, 403 not an admin account).
 		r.Route("/admin", func(r chi.Router) {
 			r.Get("/session", s.handleAdminSession)
-			r.Post("/login", s.handleAdminLogin)
-			r.Post("/logout", s.handleAdminLogout)
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireAdmin)
 				r.Get("/polls", s.handleAdminPolls)

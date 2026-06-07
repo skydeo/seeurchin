@@ -63,19 +63,21 @@ func NewService(repo Repository, items ItemResolver, codeLen int) *Service {
 
 // CreatePollInput describes a new poll.
 type CreatePollInput struct {
-	Title             string
-	HostName          string
-	LibraryScope      LibraryScope
-	SubmissionRules   SubmissionRules
-	VotingMethod      string
-	VotingConfig      json.RawMessage
-	AllowGuests       bool
-	ResultsLive       bool
-	RevealNominators  bool
-	RevealScope       string
-	Genres            []string // restrict nominations to these genres (empty = any)
-	AllowWriteins     bool
-	AutoRequestWinner bool
+	Title              string
+	HostName           string
+	HostJellyfinUserID string // Jellyfin user id of the creator (empty for guests)
+	PasscodeHash       string // optional per-poll guest passcode hash ("" = no gate)
+	LibraryScope       LibraryScope
+	SubmissionRules    SubmissionRules
+	VotingMethod       string
+	VotingConfig       json.RawMessage
+	AllowGuests        bool
+	ResultsLive        bool
+	RevealNominators   bool
+	RevealScope        string
+	Genres             []string // restrict nominations to these genres (empty = any)
+	AllowWriteins      bool
+	AutoRequestWinner  bool
 	// Deadline config. DeadlineMode selects the style; for "quick" the durations
 	// arm each round (host starts the clock); for "scheduled" the ClosesAt times
 	// are absolute. Leave zero for "none" (host advances manually).
@@ -160,16 +162,18 @@ func (s *Service) CreatePoll(ctx context.Context, in CreatePollInput) (*Poll, *P
 		Genres:            genres,
 		AllowWriteins:     in.AllowWriteins,
 		AutoRequestWinner: in.AutoRequestWinner,
+		PasscodeHash:      in.PasscodeHash,
 	}
 	if err := applyDeadlineConfig(p, in, time.Now()); err != nil {
 		return nil, nil, err
 	}
 
 	host := &Participant{
-		ID:           NewID(),
-		DisplayName:  hostName,
-		SessionToken: NewID(),
-		Role:         RoleHost,
+		ID:             NewID(),
+		DisplayName:    hostName,
+		SessionToken:   NewID(),
+		JellyfinUserID: in.HostJellyfinUserID,
+		Role:           RoleHost,
 	}
 	if err := s.repo.CreatePoll(ctx, p, host); err != nil {
 		return nil, nil, err

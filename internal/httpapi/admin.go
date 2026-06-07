@@ -2,9 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
 	"log"
 	"net/http"
 	"strings"
@@ -14,111 +11,56 @@ import (
 	"github.com/enderu/seeurchin/internal/voting"
 )
 
-const adminCookieName = "seeurchin_admin"
-
-// adminFingerprint derives a stable, non-reversible fingerprint of the admin
-// token. The admin cookie stores this (signed); a request is authenticated only
-// when its cookie's fingerprint matches the *current* token, so rotating
-// SEEURCHIN_ADMIN_TOKEN invalidates every outstanding admin session.
-func adminFingerprint(token string) string {
-	sum := sha256.Sum256([]byte("seeurchin-admin:" + token))
-	return hex.EncodeToString(sum[:])
+// isAdminUser reports whether a logged-in Jellyfin identity is authorized for
+// the admin dashboard: its username is in the configured allowlist, or it is a
+// Jellyfin administrator and that path is enabled.
+func (s *Server) isAdminUser(id *userIdentity) bool {
+	if id == nil {
+		return false
+	}
+	for _, u := range s.cfg.AdminUsers {
+		if strings.EqualFold(strings.TrimSpace(u), id.Name) {
+			return true
+		}
+	}
+	return s.cfg.AdminAllowJellyfinAdmins && id.JFAdmin
 }
 
 // requireAdmin gates the admin data endpoints: 404 when the dashboard isn't
 // configured (so its existence isn't even advertised), 401 when the caller has
-// no valid admin cookie.
+// no Jellyfin session, 403 when that account isn't authorized for admin.
 func (s *Server) requireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.cfg.AdminEnabled() {
 			s.writeJSON(w, http.StatusNotFound, errResp{"not found"})
 			return
 		}
-		if !s.adminAuthed(r) {
-			s.writeJSON(w, http.StatusUnauthorized, errResp{"admin login required"})
+		id, ok := s.currentUser(r)
+		if !ok {
+			s.writeJSON(w, http.StatusUnauthorized, errResp{"sign in with Jellyfin first"})
+			return
+		}
+		if !s.isAdminUser(id) {
+			s.writeJSON(w, http.StatusForbidden, errResp{"this account is not an admin"})
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// adminAuthed reports whether the request carries a valid admin-session cookie
-// for the current token.
-func (s *Server) adminAuthed(r *http.Request) bool {
-	c, err := r.Cookie(adminCookieName)
-	if err != nil {
-		return false
-	}
-	fp, ok := s.sessions.VerifyValue(c.Value)
-	if !ok {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(fp), []byte(adminFingerprint(s.cfg.AdminToken))) == 1
-}
-
-func (s *Server) setAdminCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     adminCookieName,
-		Value:    s.sessions.SignValue(adminFingerprint(s.cfg.AdminToken)),
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   strings.HasPrefix(s.cfg.BaseURL, "https"),
-		MaxAge:   60 * 60 * 24 * 7, // a week
-	})
-}
-
-func (s *Server) clearAdminCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     adminCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   strings.HasPrefix(s.cfg.BaseURL, "https"),
-		MaxAge:   -1,
-	})
-}
-
 // handleAdminSession lets the SPA decide what to render: 404 when the dashboard
-// is disabled, otherwise whether the caller is already logged in.
+// is disabled, otherwise whether the caller is signed in and authorized. The
+// actual sign-in flow is the shared Jellyfin login at /api/user/login.
 func (s *Server) handleAdminSession(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.AdminEnabled() {
 		s.writeJSON(w, http.StatusNotFound, errResp{"not found"})
 		return
 	}
-	s.writeJSON(w, http.StatusOK, map[string]bool{"authenticated": s.adminAuthed(r)})
-}
-
-type adminLoginReq struct {
-	Token string `json:"token"`
-}
-
-func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
-	if !s.cfg.AdminEnabled() {
-		s.writeJSON(w, http.StatusNotFound, errResp{"not found"})
-		return
-	}
-	var req adminLoginReq
-	if err := decodeJSON(r, &req); err != nil {
-		s.writeErr(w, err)
-		return
-	}
-	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(req.Token)), []byte(s.cfg.AdminToken)) != 1 {
-		s.writeJSON(w, http.StatusUnauthorized, errResp{"incorrect admin token"})
-		return
-	}
-	s.setAdminCookie(w)
-	s.writeJSON(w, http.StatusOK, map[string]bool{"authenticated": true})
-}
-
-func (s *Server) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
-	if !s.cfg.AdminEnabled() {
-		s.writeJSON(w, http.StatusNotFound, errResp{"not found"})
-		return
-	}
-	s.clearAdminCookie(w)
-	s.writeJSON(w, http.StatusOK, map[string]bool{"authenticated": false})
+	id, authed := s.currentUser(r)
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"authenticated": authed,
+		"authorized":    authed && s.isAdminUser(id),
+	})
 }
 
 // adminPollView is one row of the admin history list.

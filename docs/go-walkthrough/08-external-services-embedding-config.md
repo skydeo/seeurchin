@@ -202,7 +202,8 @@ func FromEnv() (Config, error) {
         Addr:              envOr("SEEURCHIN_ADDR", ":5858"),
         BaseURL:           strings.TrimRight(envOr("SEEURCHIN_BASE_URL", "http://localhost:5858"), "/"),
         DBPath:            envOr("SEEURCHIN_DB_PATH", "./seeurchin.db"),
-        AdminToken:        strings.TrimSpace(os.Getenv("SEEURCHIN_ADMIN_TOKEN")),
+        EnableUserLogin:   envBool("SEEURCHIN_ENABLE_USER_LOGIN", false),
+        AdminUsers:        envList("SEEURCHIN_ADMIN_USERS"),
         PollRetentionDays: envInt("SEEURCHIN_POLL_RETENTION_DAYS", 0),
         Jellyfin: JellyfinConfig{
             URL:    strings.TrimRight(os.Getenv("JELLYFIN_URL"), "/"),

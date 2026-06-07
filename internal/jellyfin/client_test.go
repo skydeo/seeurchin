@@ -2,6 +2,7 @@ package jellyfin
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -35,6 +36,45 @@ func TestAuthHeaderOmitsEmptyToken(t *testing.T) {
 	h := authHeader("")
 	if strings.Contains(h, "Token=") {
 		t.Errorf("empty token should be omitted, got %q", h)
+	}
+}
+
+func TestAuthenticateByName(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/Users/AuthenticateByName" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if h := r.Header.Get("Authorization"); !strings.HasPrefix(h, "MediaBrowser ") || strings.Contains(h, "Token=") {
+			t.Errorf("auth header = %q, want MediaBrowser without Token", h)
+		}
+		var body struct{ Username, Pw string }
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Username != "alice" || body.Pw != "hunter2" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"AccessToken": "tok",
+			"User": map[string]any{
+				"Id":     "user-123",
+				"Name":   "Alice",
+				"Policy": map[string]any{"IsAdministrator": true},
+			},
+		})
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "k")
+
+	res, err := c.AuthenticateByName(context.Background(), "alice", "hunter2")
+	if err != nil {
+		t.Fatalf("AuthenticateByName: %v", err)
+	}
+	if res.UserID != "user-123" || res.Username != "Alice" || !res.IsAdmin {
+		t.Fatalf("result = %+v, want id=user-123 name=Alice admin=true", res)
+	}
+
+	if _, err := c.AuthenticateByName(context.Background(), "alice", "wrong"); err == nil {
+		t.Fatal("expected error on bad credentials")
 	}
 }
 

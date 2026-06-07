@@ -28,8 +28,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 // to surface the admin link.
 func (s *Server) handleFeatures(w http.ResponseWriter, _ *http.Request) {
 	s.writeJSON(w, http.StatusOK, map[string]any{
-		"seerr": s.seerrEnabled(),
-		"admin": s.cfg.AdminEnabled(),
+		"seerr":      s.seerrEnabled(),
+		"admin":      s.cfg.AdminEnabled(),
+		"user_login": s.cfg.EnableUserLogin,
 	})
 }
 
@@ -61,6 +62,7 @@ type createPollReq struct {
 	Genres            []string             `json:"genres"`
 	AllowWriteins     bool                 `json:"allow_writeins"`
 	AutoRequestWinner bool                 `json:"auto_request_winner"`
+	Passcode          string               `json:"passcode"`
 	DeadlineMode      string               `json:"deadline_mode"`
 	Round1DurationSec int                  `json:"round1_duration_sec"`
 	Round2DurationSec int                  `json:"round2_duration_sec"`
@@ -90,25 +92,37 @@ func (s *Server) handleCreatePoll(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, err)
 		return
 	}
+	// When signed in with Jellyfin, attribute the poll to that account and
+	// default the host name to the Jellyfin display name if none was supplied.
+	hostName := req.HostName
+	var hostJellyfinUserID string
+	if id, ok := s.currentUser(r); ok {
+		hostJellyfinUserID = id.UserID
+		if strings.TrimSpace(hostName) == "" {
+			hostName = id.Name
+		}
+	}
 	p, host, err := s.svc.CreatePoll(r.Context(), poll.CreatePollInput{
-		Title:             req.Title,
-		HostName:          req.HostName,
-		LibraryScope:      poll.LibraryScope(req.LibraryScope),
-		SubmissionRules:   req.SubmissionRules,
-		VotingMethod:      req.VotingMethod,
-		VotingConfig:      req.VotingConfig,
-		AllowGuests:       req.AllowGuests,
-		ResultsLive:       req.ResultsLive,
-		RevealNominators:  req.RevealNominators,
-		RevealScope:       req.RevealScope,
-		Genres:            req.Genres,
-		AllowWriteins:     req.AllowWriteins,
-		AutoRequestWinner: req.AutoRequestWinner,
-		DeadlineMode:      poll.DeadlineMode(req.DeadlineMode),
-		Round1DurationSec: req.Round1DurationSec,
-		Round2DurationSec: req.Round2DurationSec,
-		Round1ClosesAt:    req.Round1ClosesAt,
-		Round2ClosesAt:    req.Round2ClosesAt,
+		Title:              req.Title,
+		HostName:           hostName,
+		HostJellyfinUserID: hostJellyfinUserID,
+		PasscodeHash:       s.passcodeHash(req.Passcode),
+		LibraryScope:       poll.LibraryScope(req.LibraryScope),
+		SubmissionRules:    req.SubmissionRules,
+		VotingMethod:       req.VotingMethod,
+		VotingConfig:       req.VotingConfig,
+		AllowGuests:        req.AllowGuests,
+		ResultsLive:        req.ResultsLive,
+		RevealNominators:   req.RevealNominators,
+		RevealScope:        req.RevealScope,
+		Genres:             req.Genres,
+		AllowWriteins:      req.AllowWriteins,
+		AutoRequestWinner:  req.AutoRequestWinner,
+		DeadlineMode:       poll.DeadlineMode(req.DeadlineMode),
+		Round1DurationSec:  req.Round1DurationSec,
+		Round2DurationSec:  req.Round2DurationSec,
+		Round1ClosesAt:     req.Round1ClosesAt,
+		Round2ClosesAt:     req.Round2ClosesAt,
 	})
 	if err != nil {
 		s.writeErr(w, err)
@@ -134,6 +148,7 @@ func (s *Server) handleGetPoll(w http.ResponseWriter, r *http.Request) {
 
 type joinReq struct {
 	DisplayName string `json:"display_name"`
+	Passcode    string `json:"passcode"`
 }
 
 func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
@@ -149,6 +164,12 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 	var req joinReq
 	if err := decodeJSON(r, &req); err != nil {
 		s.writeErr(w, err)
+		return
+	}
+	// Optional per-poll guest passcode: a soft gate the host sets at creation to
+	// keep random link-finders out. It never touches the NAS.
+	if p.PasscodeHash != "" && !s.passcodeMatches(p.PasscodeHash, req.Passcode) {
+		s.writeJSON(w, http.StatusForbidden, errResp{"incorrect passcode"})
 		return
 	}
 	me, err := s.svc.JoinAsGuest(r.Context(), p, req.DisplayName)

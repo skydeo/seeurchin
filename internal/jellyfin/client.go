@@ -9,6 +9,7 @@
 package jellyfin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -56,6 +57,63 @@ func authHeader(token string) string {
 		parts = append([]string{fmt.Sprintf("Token=%q", token)}, parts...)
 	}
 	return "MediaBrowser " + strings.Join(parts, ", ")
+}
+
+// AuthResult is the identity returned by a successful username/password login.
+type AuthResult struct {
+	UserID   string // Jellyfin user id (stable)
+	Username string // display name as Jellyfin knows it
+	IsAdmin  bool   // the account's Policy.IsAdministrator flag
+}
+
+// AuthenticateByName logs in a Jellyfin user with a username and password via
+// POST /Users/AuthenticateByName, using the modern Authorization header with no
+// token. It returns the resolved identity (id, name, admin flag). An error means
+// the credentials were rejected or the server was unreachable; the access token
+// Jellyfin returns is intentionally discarded — seeurchin only needs identity.
+func (c *Client) AuthenticateByName(ctx context.Context, username, password string) (*AuthResult, error) {
+	body, err := json.Marshal(map[string]string{"Username": username, "Pw": password})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/Users/AuthenticateByName", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	// No token: this call establishes one. Reuse the standard header builder.
+	req.Header.Set("Authorization", authHeader(""))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Jellyfin returns 401 for bad credentials; surface a clean message.
+		return nil, fmt.Errorf("jellyfin login: %s", resp.Status)
+	}
+	var out struct {
+		User struct {
+			ID     string `json:"Id"`
+			Name   string `json:"Name"`
+			Policy struct {
+				IsAdministrator bool `json:"IsAdministrator"`
+			} `json:"Policy"`
+		} `json:"User"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	if out.User.ID == "" {
+		return nil, fmt.Errorf("jellyfin login: empty user in response")
+	}
+	return &AuthResult{
+		UserID:   out.User.ID,
+		Username: out.User.Name,
+		IsAdmin:  out.User.Policy.IsAdministrator,
+	}, nil
 }
 
 // Item is a movie or series from the Jellyfin library.
