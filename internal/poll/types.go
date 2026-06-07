@@ -78,6 +78,7 @@ type Poll struct {
 	Genres            []string        `json:"genres"`              // nomination pool restricted to these genres (empty = all)
 	AllowWriteins     bool            `json:"allow_writeins"`      // allow nominating titles not in the library (via Seerr)
 	AutoRequestWinner bool            `json:"auto_request_winner"` // auto-request a winning write-in via Seerr on close
+	PasscodeHash      string          `json:"-"`                   // optional per-poll guest passcode hash ("" = no gate); never serialized
 	CreatedAt         time.Time       `json:"created_at"`
 	// Deadline / auto-advance. DeadlineMode picks the style; the durations are
 	// the armed length for "quick" rounds (used to stamp ClosesAt on start /

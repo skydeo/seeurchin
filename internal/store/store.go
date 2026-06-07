@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS polls (
   closed_at           TEXT,
   allow_writeins      INTEGER NOT NULL DEFAULT 0,
   auto_request_winner INTEGER NOT NULL DEFAULT 0,
+  passcode_hash       TEXT NOT NULL DEFAULT '',
   created_at          TEXT NOT NULL,
   round1_closes_at    TEXT,
   round2_closes_at    TEXT,
@@ -143,6 +144,7 @@ func (s *Store) addColumns(ctx context.Context) error {
 		{"polls", "closed_at", "TEXT"},
 		{"polls", "allow_writeins", "INTEGER NOT NULL DEFAULT 0"},
 		{"polls", "auto_request_winner", "INTEGER NOT NULL DEFAULT 0"},
+		{"polls", "passcode_hash", "TEXT NOT NULL DEFAULT ''"},
 		{"polls", "deadline_mode", "TEXT NOT NULL DEFAULT ''"},
 		{"polls", "round1_duration_sec", "INTEGER NOT NULL DEFAULT 0"},
 		{"polls", "round2_duration_sec", "INTEGER NOT NULL DEFAULT 0"},
@@ -249,14 +251,14 @@ func (s *Store) CreatePoll(ctx context.Context, p *poll.Poll, host *poll.Partici
 			INSERT INTO polls (id, code, title, host_participant_id, library_scope, status,
 				submission_rules, voting_method, voting_config, allow_guests, results_live,
 				reveal_nominators, reveal_scope, genres, winner_nomination_id, decided_at,
-				allow_writeins, auto_request_winner,
+				allow_writeins, auto_request_winner, passcode_hash,
 				created_at, round1_closes_at, round2_closes_at,
 				deadline_mode, round1_duration_sec, round2_duration_sec, timer_paused_sec)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			p.ID, p.Code, p.Title, p.HostParticipantID, string(p.LibraryScope), string(p.Status),
 			string(rules), p.VotingMethod, string(p.VotingConfig), boolToInt(p.AllowGuests), boolToInt(p.ResultsLive),
 			boolToInt(p.RevealNominators), p.RevealScope, string(genres), p.WinnerNominationID, timeText(p.DecidedAt),
-			boolToInt(p.AllowWriteins), boolToInt(p.AutoRequestWinner),
+			boolToInt(p.AllowWriteins), boolToInt(p.AutoRequestWinner), p.PasscodeHash,
 			p.CreatedAt.UTC().Format(time.RFC3339Nano), timeText(p.Round1ClosesAt), timeText(p.Round2ClosesAt),
 			string(p.DeadlineMode), p.Round1DurationSec, p.Round2DurationSec, p.TimerPausedSec,
 		); err != nil {
@@ -283,7 +285,7 @@ func (s *Store) GetPollByID(ctx context.Context, id string) (*poll.Poll, error) 
 const pollSelect = `SELECT id, code, title, host_participant_id, library_scope, status,
 	submission_rules, voting_method, voting_config, allow_guests, results_live,
 	reveal_nominators, reveal_scope, genres, winner_nomination_id, decided_at,
-	allow_writeins, auto_request_winner,
+	allow_writeins, auto_request_winner, passcode_hash,
 	created_at, round1_closes_at, round2_closes_at,
 	deadline_mode, round1_duration_sec, round2_duration_sec, timer_paused_sec, closed_at FROM polls`
 
@@ -297,6 +299,7 @@ func (s *Store) scanPoll(row rowScanner) (*poll.Poll, error) {
 		revealScope, genres, winnerNomID string
 		decidedAt                        sql.NullString
 		allowWriteins, autoRequestWinner int
+		passcodeHash                     string
 		createdAt                        string
 		r1, r2                           sql.NullString
 		deadlineMode                     string
@@ -306,7 +309,7 @@ func (s *Store) scanPoll(row rowScanner) (*poll.Poll, error) {
 	err := row.Scan(&p.ID, &p.Code, &p.Title, &p.HostParticipantID, &scope, &status,
 		&rules, &vmethod, &vconfig, &allowGuests, &resultsLive,
 		&revealNominators, &revealScope, &genres, &winnerNomID, &decidedAt,
-		&allowWriteins, &autoRequestWinner,
+		&allowWriteins, &autoRequestWinner, &passcodeHash,
 		&createdAt, &r1, &r2,
 		&deadlineMode, &r1Dur, &r2Dur, &pausedSec, &closedAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -327,6 +330,7 @@ func (s *Store) scanPoll(row rowScanner) (*poll.Poll, error) {
 	p.DecidedAt = parseNullTime(decidedAt)
 	p.AllowWriteins = allowWriteins != 0
 	p.AutoRequestWinner = autoRequestWinner != 0
+	p.PasscodeHash = passcodeHash
 	p.CreatedAt = parseTime(createdAt)
 	p.Round1ClosesAt = parseNullTime(r1)
 	p.Round2ClosesAt = parseNullTime(r2)
