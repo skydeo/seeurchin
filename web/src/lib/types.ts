@@ -120,6 +120,28 @@ export interface VotingMethod {
 	default_config: Record<string, unknown>;
 }
 
+// --- admin dashboard ---
+
+export interface AdminSession {
+	authenticated: boolean;
+}
+
+// One row of the admin history list, mirroring httpapi adminPollView.
+export interface AdminPollSummary {
+	code: string;
+	title: string;
+	status: Status;
+	voting_method: string;
+	voting_method_label: string;
+	deadline_mode?: string;
+	participant_count: number;
+	nomination_count: number;
+	voter_count: number;
+	winner_title?: string;
+	created_at: string; // RFC3339
+	closed_at?: string; // RFC3339, present once closed
+}
+
 export interface CreatePollBody {
 	title: string;
 	host_name: string;

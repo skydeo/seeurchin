@@ -57,6 +57,32 @@ func (s *Sessions) Decode(cookie string) (map[string]string, error) {
 	return tokens, nil
 }
 
+// SignValue returns a signed, tamper-evident cookie value carrying v, of the
+// form "<base64url(v)>.<base64url(hmac)>". Use it for small opaque markers (e.g.
+// the admin-session fingerprint), the single-value analogue of Encode.
+func (s *Sessions) SignValue(v string) string {
+	body := base64.RawURLEncoding.EncodeToString([]byte(v))
+	return body + "." + s.sign(body)
+}
+
+// VerifyValue verifies a value produced by SignValue, returning the original
+// value and whether the signature checked out.
+func (s *Sessions) VerifyValue(signed string) (string, bool) {
+	i := strings.LastIndexByte(signed, '.')
+	if i < 0 {
+		return "", false
+	}
+	body, sig := signed[:i], signed[i+1:]
+	if !hmac.Equal([]byte(sig), []byte(s.sign(body))) {
+		return "", false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(body)
+	if err != nil {
+		return "", false
+	}
+	return string(raw), true
+}
+
 func (s *Sessions) sign(body string) string {
 	mac := hmac.New(sha256.New, s.secret)
 	mac.Write([]byte(body))

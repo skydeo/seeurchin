@@ -36,7 +36,21 @@ type Config struct {
 
 	// CodeStyle selects the share-code generator: "base32" (default) or "words".
 	CodeStyle string
+
+	// AdminToken gates the admin dashboard (poll history + management). When
+	// empty the dashboard and its API are disabled entirely (every /api/admin/*
+	// route returns 404).
+	AdminToken string
+
+	// PollRetentionDays auto-deletes polls this many days after they close
+	// (cascading to their participants/nominations/votes). 0 (the default) keeps
+	// poll history forever.
+	PollRetentionDays int
 }
+
+// AdminEnabled reports whether the admin dashboard is configured (a token is
+// set). When false, the dashboard and all /api/admin/* endpoints are disabled.
+func (c Config) AdminEnabled() bool { return c.AdminToken != "" }
 
 // JellyfinConfig describes how to reach the Jellyfin server for library reads.
 type JellyfinConfig struct {
@@ -73,11 +87,13 @@ func (s SeerrConfig) Enabled() bool { return s.URL != "" && s.APIKey != "" }
 // validating required fields.
 func FromEnv() (Config, error) {
 	c := Config{
-		Addr:            envOr("SEEURCHIN_ADDR", ":5858"),
-		BaseURL:         strings.TrimRight(envOr("SEEURCHIN_BASE_URL", "http://localhost:5858"), "/"),
-		DBPath:          envOr("SEEURCHIN_DB_PATH", "./seeurchin.db"),
-		EnableUserLogin: envBool("SEEURCHIN_ENABLE_USER_LOGIN", false),
-		CodeStyle:       envOr("SEEURCHIN_CODE_STYLE", "base32"),
+		Addr:              envOr("SEEURCHIN_ADDR", ":5858"),
+		BaseURL:           strings.TrimRight(envOr("SEEURCHIN_BASE_URL", "http://localhost:5858"), "/"),
+		DBPath:            envOr("SEEURCHIN_DB_PATH", "./seeurchin.db"),
+		EnableUserLogin:   envBool("SEEURCHIN_ENABLE_USER_LOGIN", false),
+		CodeStyle:         envOr("SEEURCHIN_CODE_STYLE", "base32"),
+		AdminToken:        strings.TrimSpace(os.Getenv("SEEURCHIN_ADMIN_TOKEN")),
+		PollRetentionDays: envInt("SEEURCHIN_POLL_RETENTION_DAYS", 0),
 		Jellyfin: JellyfinConfig{
 			URL:    strings.TrimRight(os.Getenv("JELLYFIN_URL"), "/"),
 			APIKey: os.Getenv("JELLYFIN_API_KEY"),

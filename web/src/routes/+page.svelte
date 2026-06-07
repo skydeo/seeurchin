@@ -34,6 +34,7 @@
 	let genreError = $state('');
 	let showGenres = $state(false); // genre picker is collapsed by default
 	let seerrEnabled = $state(false);
+	let adminEnabled = $state(false);
 	let allowWriteins = $state(true);
 	let autoRequestWinner = $state(true);
 	let deadlineMode = $state<'none' | 'quick' | 'scheduled'>('none');
@@ -52,7 +53,9 @@
 			error = e instanceof Error ? e.message : 'could not load voting methods';
 		}
 		try {
-			seerrEnabled = (await api.features()).seerr;
+			const features = await api.features();
+			seerrEnabled = features.seerr;
+			adminEnabled = features.admin;
 		} catch {
 			seerrEnabled = false;
 		}
@@ -446,4 +449,9 @@
 	</form>
 
 	<p class="mt-6 text-center text-xs font-semibold text-faint">self-hosted movie voting for your Jellyfin library</p>
+	{#if adminEnabled}
+		<p class="mt-2 text-center">
+			<a href="/admin" class="text-xs font-bold text-accent hover:opacity-80">admin dashboard →</a>
+		</p>
+	{/if}
 </main>

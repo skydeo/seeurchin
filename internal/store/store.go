@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS polls (
   genres              TEXT NOT NULL DEFAULT '[]',
   winner_nomination_id TEXT NOT NULL DEFAULT '',
   decided_at          TEXT,
+  closed_at           TEXT,
   allow_writeins      INTEGER NOT NULL DEFAULT 0,
   auto_request_winner INTEGER NOT NULL DEFAULT 0,
   created_at          TEXT NOT NULL,
@@ -139,6 +140,7 @@ func (s *Store) addColumns(ctx context.Context) error {
 		{"polls", "genres", "TEXT NOT NULL DEFAULT '[]'"},
 		{"polls", "winner_nomination_id", "TEXT NOT NULL DEFAULT ''"},
 		{"polls", "decided_at", "TEXT"},
+		{"polls", "closed_at", "TEXT"},
 		{"polls", "allow_writeins", "INTEGER NOT NULL DEFAULT 0"},
 		{"polls", "auto_request_winner", "INTEGER NOT NULL DEFAULT 0"},
 		{"polls", "deadline_mode", "TEXT NOT NULL DEFAULT ''"},
@@ -283,7 +285,7 @@ const pollSelect = `SELECT id, code, title, host_participant_id, library_scope, 
 	reveal_nominators, reveal_scope, genres, winner_nomination_id, decided_at,
 	allow_writeins, auto_request_winner,
 	created_at, round1_closes_at, round2_closes_at,
-	deadline_mode, round1_duration_sec, round2_duration_sec, timer_paused_sec FROM polls`
+	deadline_mode, round1_duration_sec, round2_duration_sec, timer_paused_sec, closed_at FROM polls`
 
 func (s *Store) scanPoll(row rowScanner) (*poll.Poll, error) {
 	var (
@@ -299,13 +301,14 @@ func (s *Store) scanPoll(row rowScanner) (*poll.Poll, error) {
 		r1, r2                           sql.NullString
 		deadlineMode                     string
 		r1Dur, r2Dur, pausedSec          int
+		closedAt                         sql.NullString
 	)
 	err := row.Scan(&p.ID, &p.Code, &p.Title, &p.HostParticipantID, &scope, &status,
 		&rules, &vmethod, &vconfig, &allowGuests, &resultsLive,
 		&revealNominators, &revealScope, &genres, &winnerNomID, &decidedAt,
 		&allowWriteins, &autoRequestWinner,
 		&createdAt, &r1, &r2,
-		&deadlineMode, &r1Dur, &r2Dur, &pausedSec)
+		&deadlineMode, &r1Dur, &r2Dur, &pausedSec, &closedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, poll.ErrNotFound
 	}
@@ -331,6 +334,7 @@ func (s *Store) scanPoll(row rowScanner) (*poll.Poll, error) {
 	p.Round1DurationSec = r1Dur
 	p.Round2DurationSec = r2Dur
 	p.TimerPausedSec = pausedSec
+	p.ClosedAt = parseNullTime(closedAt)
 	p.Genres = []string{}
 	if genres != "" {
 		if err := json.Unmarshal([]byte(genres), &p.Genres); err != nil {
@@ -358,10 +362,21 @@ func (s *Store) UpdatePollStatus(ctx context.Context, id string, status poll.Sta
 }
 
 // CompareAndSetStatus moves a poll from one status to another only if it is
-// currently in `from`, returning whether the row changed.
+// currently in `from`, returning whether the row changed. Transitions into
+// "closed" also stamp closed_at, the authoritative poll-end time for retention.
 func (s *Store) CompareAndSetStatus(ctx context.Context, id string, from, to poll.Status) (bool, error) {
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE polls SET status = ? WHERE id = ? AND status = ?`, string(to), id, string(from))
+	var (
+		res sql.Result
+		err error
+	)
+	if to == poll.StatusClosed {
+		res, err = s.db.ExecContext(ctx,
+			`UPDATE polls SET status = ?, closed_at = ? WHERE id = ? AND status = ?`,
+			string(to), nowText(), id, string(from))
+	} else {
+		res, err = s.db.ExecContext(ctx,
+			`UPDATE polls SET status = ? WHERE id = ? AND status = ?`, string(to), id, string(from))
+	}
 	if err != nil {
 		return false, err
 	}
@@ -420,6 +435,95 @@ func (s *Store) CodeExists(ctx context.Context, code string) (bool, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM polls WHERE code = ?`, code).Scan(&n)
 	return n > 0, err
+}
+
+// ListPolls returns every poll, newest first (for the admin history view).
+func (s *Store) ListPolls(ctx context.Context) ([]*poll.Poll, error) {
+	rows, err := s.db.QueryContext(ctx, pollSelect+` ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*poll.Poll
+	for rows.Next() {
+		p, err := s.scanPoll(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// AllPollCounts returns participant/nomination/voter tallies for every poll,
+// keyed by poll ID, in three grouped queries (no per-poll fan-out).
+func (s *Store) AllPollCounts(ctx context.Context) (map[string]poll.PollCounts, error) {
+	out := map[string]poll.PollCounts{}
+	groupedCount := func(query string, set func(c *poll.PollCounts, n int)) error {
+		rows, err := s.db.QueryContext(ctx, query)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var (
+				id string
+				n  int
+			)
+			if err := rows.Scan(&id, &n); err != nil {
+				return err
+			}
+			c := out[id]
+			set(&c, n)
+			out[id] = c
+		}
+		return rows.Err()
+	}
+	if err := groupedCount(
+		`SELECT poll_id, COUNT(*) FROM participants GROUP BY poll_id`,
+		func(c *poll.PollCounts, n int) { c.Participants = n }); err != nil {
+		return nil, err
+	}
+	if err := groupedCount(
+		`SELECT poll_id, COUNT(*) FROM nominations GROUP BY poll_id`,
+		func(c *poll.PollCounts, n int) { c.Nominations = n }); err != nil {
+		return nil, err
+	}
+	if err := groupedCount(
+		`SELECT poll_id, COUNT(DISTINCT participant_id) FROM votes GROUP BY poll_id`,
+		func(c *poll.PollCounts, n int) { c.Voters = n }); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DeletePoll removes a poll; ON DELETE CASCADE clears its participants,
+// nominations, votes, and Seerr requests.
+func (s *Store) DeletePoll(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM polls WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	return mustAffect(res)
+}
+
+// DeleteClosedPollsBefore deletes closed polls whose end time is before cutoff.
+// The end time is closed_at, falling back to decided_at for polls closed before
+// closed_at existed; a closed poll with neither recorded is never purged. All
+// timestamps are stored as UTC RFC3339Nano, so the lexicographic comparison is
+// chronological.
+func (s *Store) DeleteClosedPollsBefore(ctx context.Context, cutoff time.Time) (int, error) {
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM polls
+		WHERE status = ?
+		  AND COALESCE(NULLIF(closed_at, ''), NULLIF(decided_at, '')) IS NOT NULL
+		  AND COALESCE(NULLIF(closed_at, ''), NULLIF(decided_at, '')) < ?`,
+		string(poll.StatusClosed), cutoff.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
 }
 
 // --- participants ---
