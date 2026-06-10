@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Documentation — seeurchin</title>
+  <meta name="description" content="seeurchin documentation: install, configuration, access control, and the REST + SSE API." />
+  <link rel="icon" href="brand/icons/seeurchin-mark.svg" type="image/svg+xml" />
+  <link rel="icon" href="brand/icons/favicon-32.png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="brand/icons/apple-touch-icon-180.png" />
+
+  <script>
+    (function () {
+      var m = localStorage.getItem("seeurchin-site-theme") || "system";
+      var dark = m === "dark" || (m === "system" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    })();
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="site.css" />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="index.html">
+        <img src="brand/icons/seeurchin-mark.svg" alt="" />
+        seeurchin
+      </a>
+      <nav class="nav-links">
+        <a href="index.html#features">Features</a>
+        <a href="index.html#how">How it works</a>
+        <a href="docs.html">Docs</a>
+        <a href="https://github.com/skydeo/seeurchin">GitHub</a>
+        <button id="theme-toggle" class="icon-btn" aria-label="Toggle dark mode" title="Toggle theme">
+          <svg class="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>
+          <svg class="theme-icon-dark" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    <div class="doc-layout">
+      <!-- TOC -->
+      <aside class="toc">
+        <h4>On this page</h4>
+        <nav>
+          <a href="#quick-start">Quick start (Docker)</a>
+          <a href="#existing-stack">Existing Jellyfin stack</a>
+          <a href="#config">Configuration</a>
+          <a href="#access-control">Access control</a>
+          <a href="#voting">Voting methods</a>
+          <a href="#api">API reference</a>
+          <a href="#development">Development &amp; build</a>
+          <a href="#architecture">Architecture</a>
+        </nav>
+      </aside>
+
+      <!-- BODY -->
+      <article class="doc-body">
+        <h1 style="font-size:2.4rem; margin:0 0 8px;">Documentation</h1>
+        <p style="color:var(--color-muted); font-size:1.1rem;">
+          seeurchin is a self-hosted, group movie &amp; show picker for Jellyfin: a Go
+          backend serving a REST + SSE API and an embedded SvelteKit single-page app.
+          Everything is configured with environment variables; only the Jellyfin URL
+          and an API key are required.
+        </p>
+
+        <h2 id="quick-start">Quick start (Docker)</h2>
+        <p>Run it standalone, pointed at any reachable Jellyfin server:</p>
+        <div class="codeblock">
+          <div class="codeblock-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">shell</span></div>
+          <button class="copy-btn" type="button">Copy</button>
+<pre><code><span class="k">export</span> JELLYFIN_URL=<span class="s">http://your-jellyfin:8096</span>
+<span class="k">export</span> JELLYFIN_API_KEY=<span class="s">...</span>                      <span class="c"># Jellyfin Dashboard → API Keys</span>
+<span class="k">export</span> SEEURCHIN_SESSION_SECRET=<span class="s">$(openssl rand -hex 32)</span>
+<span class="k">export</span> SEEURCHIN_BASE_URL=<span class="s">http://localhost:5858</span>
+docker compose up --build</code></pre>
+        </div>
+        <p>Open <code>http://localhost:5858</code>.</p>
+        <div class="callout">
+          <strong>Getting a Jellyfin API key:</strong> in Jellyfin, go to
+          <em>Dashboard → API Keys → +</em>, name it <code>seeurchin</code>, and copy
+          the key. It's used only for reading the library — it's never exposed to the
+          browser.
+        </div>
+
+        <h2 id="existing-stack">Adding it to an existing Jellyfin stack</h2>
+        <p>
+          Add a service to your stack's <code>docker-compose.yml</code> on the same
+          Docker network as Jellyfin (so it can reach it by service name), then route a
+          hostname to it through your reverse proxy or Cloudflare tunnel:
+        </p>
+        <div class="codeblock">
+          <div class="codeblock-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">docker-compose.yml</span></div>
+          <button class="copy-btn" type="button">Copy</button>
+<pre><code>  <span class="k">seeurchin:</span>
+    image: seeurchin:latest          <span class="c"># or: build: ./seeurchin</span>
+    container_name: seeurchin
+    init: <span class="k">true</span>
+    environment:
+      - TZ=America/Chicago
+      - JELLYFIN_URL=<span class="s">http://jellyfin:8096</span>
+      - JELLYFIN_API_KEY=<span class="s">&lt;dashboard API key&gt;</span>
+      - SEEURCHIN_BASE_URL=<span class="s">https://vote.example.com</span>   <span class="c"># your public hostname</span>
+      - SEEURCHIN_SESSION_SECRET=<span class="s">&lt;openssl rand -hex 32&gt;</span>
+    volumes:
+      - ./config/seeurchin:/config
+    ports:
+      - <span class="s">"5858:5858"</span>
+    networks:
+      - media-network
+    depends_on:
+      - jellyfin
+    restart: unless-stopped</code></pre>
+        </div>
+        <p>
+          Then add a public-hostname route in your tunnel (e.g.
+          <code>vote.example.com → http://seeurchin:5858</code>). Because
+          <code>SEEURCHIN_BASE_URL</code> is set to the public hostname, copied share
+          links just work.
+        </p>
+
+        <h2 id="config">Configuration</h2>
+        <p>All configuration is via environment variables.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Variable</th><th>Required</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>JELLYFIN_URL</code></td><td><strong>yes</strong></td><td>—</td><td>Jellyfin base URL, e.g. <code>http://jellyfin:8096</code>.</td></tr>
+              <tr><td><code>JELLYFIN_API_KEY</code></td><td><strong>yes</strong></td><td>—</td><td>API key (Dashboard → API Keys) for library reads.</td></tr>
+              <tr><td><code>SEEURCHIN_BASE_URL</code></td><td>recommended</td><td><code>http://localhost:5858</code></td><td>Public origin used to build shareable links. Set to your tunnel hostname in production.</td></tr>
+              <tr><td><code>SEEURCHIN_SESSION_SECRET</code></td><td>recommended</td><td>random</td><td>HMAC secret for session cookies. If unset, a random secret is generated and sessions won't survive a restart.</td></tr>
+              <tr><td><code>SEEURCHIN_ADDR</code></td><td>no</td><td><code>:5858</code></td><td>TCP listen address.</td></tr>
+              <tr><td><code>SEEURCHIN_DB_PATH</code></td><td>no</td><td><code>./seeurchin.db</code></td><td>SQLite file path. Use a mounted volume (the image defaults to <code>/config</code>).</td></tr>
+              <tr><td><code>SEEURCHIN_CODE_STYLE</code></td><td>no</td><td><code>base32</code></td><td>Share-code style. Only <code>base32</code> is implemented today.</td></tr>
+              <tr><td><code>SEEURCHIN_ENABLE_USER_LOGIN</code></td><td>no</td><td><code>false</code></td><td>Require a Jellyfin login to create a poll and request a write-in. Joining/voting stay open via the share link.</td></tr>
+              <tr><td><code>SEEURCHIN_ADMIN_USERS</code></td><td>no</td><td>—</td><td>Comma-separated Jellyfin usernames allowed into <code>/admin</code>. Requires user login.</td></tr>
+              <tr><td><code>SEEURCHIN_ADMIN_JELLYFIN_ADMINS</code></td><td>no</td><td><code>false</code></td><td>Also grant admin access to any Jellyfin administrator. Requires user login.</td></tr>
+              <tr><td><code>SEEURCHIN_POLL_RETENTION_DAYS</code></td><td>no</td><td><code>0</code></td><td>Auto-delete polls this many days after they close. <code>0</code> keeps history forever.</td></tr>
+              <tr><td><code>SEERR_URL</code></td><td>no</td><td>—</td><td>Seerr/Overseerr/Jellyseerr base URL. Set with <code>SEERR_API_KEY</code> to enable write-ins + winner auto-request.</td></tr>
+              <tr><td><code>SEERR_API_KEY</code></td><td>no</td><td>—</td><td>Seerr API key. Use a dedicated account; grant auto-approve to have winners download without manual approval.</td></tr>
+              <tr><td><code>SEERR_USER_ID</code></td><td>no</td><td>key owner</td><td>Seerr user id to attribute requests to.</td></tr>
+              <tr><td><code>SEERR_MOVIE_PROFILE_ID</code> / <code>SEERR_TV_PROFILE_ID</code></td><td>no</td><td>account default</td><td>Quality profile id for movie / TV requests.</td></tr>
+              <tr><td><code>SEERR_MOVIE_ROOT_FOLDER</code> / <code>SEERR_TV_ROOT_FOLDER</code></td><td>no</td><td>account default</td><td>Root folder for movie / TV requests.</td></tr>
+              <tr><td><code>SEERR_SERVER_ID</code></td><td>no</td><td>account default</td><td>Radarr/Sonarr server id to request against.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout">
+          The Docker image additionally defaults <code>SEEURCHIN_DB_PATH=/config/seeurchin.db</code>
+          and declares <code>/config</code> as a volume.
+        </div>
+
+        <h2 id="access-control">Access control</h2>
+        <p>seeurchin is designed to be shared with people outside your network, so its gating is split by what each action can do:</p>
+        <ul>
+          <li><strong>Joining, nominating, and voting</strong> are open to anyone with the share link — optionally narrowed by a <strong>per-poll passcode</strong> the host sets at creation (a soft gate that never touches your NAS).</li>
+          <li><strong>Creating a poll</strong> and <strong>requesting a winning write-in</strong> are the only actions that can reach Seerr and trigger a download. Set <code>SEEURCHIN_ENABLE_USER_LOGIN=true</code> to require a Jellyfin login for them.</li>
+          <li><strong>Admin</strong> (<code>/admin</code>) is authorized from that same Jellyfin identity: list trusted usernames in <code>SEEURCHIN_ADMIN_USERS</code>, and/or set <code>SEEURCHIN_ADMIN_JELLYFIN_ADMINS=true</code> to admit any Jellyfin administrator.</li>
+        </ul>
+        <div class="callout">
+          For a public deployment, also consider rate-limiting <code>/api/user/login</code>
+          (e.g. a Cloudflare rule) on top of the small built-in per-IP throttle.
+        </div>
+
+        <h2 id="voting">Voting methods</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Method</th><th>Config keys (defaults)</th><th>How the winner is decided</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><span class="tag tag-ocean">Approval</span></td>
+                <td><code>votes_per_user</code> (3), <code>max_votes_per_option</code> (1), <code>allow_self_vote</code> (true)</td>
+                <td>Highest total weight across all ballots. With <code>max_votes_per_option: 1</code> this is plain approval voting.</td>
+              </tr>
+              <tr>
+                <td><span class="tag tag-teal">Ranked (IRV)</span></td>
+                <td><code>allow_self_vote</code> (true), <code>max_ranked</code> (0 = no limit)</td>
+                <td>Instant-runoff: eliminate the lowest first choice and redistribute until a title has a majority.</td>
+              </tr>
+              <tr>
+                <td><span class="tag tag-mango">Score / Stars</span></td>
+                <td><code>max_score</code> (5), <code>aggregate</code> (<code>total</code> or <code>average</code>), <code>allow_self_vote</code> (true)</td>
+                <td>Rate each title <code>0..max_score</code>; ranked by total (or average) score.</td>
+              </tr>
+              <tr>
+                <td><span class="tag tag-coral">Random pick</span></td>
+                <td><em>none</em></td>
+                <td>No voting round — when the host closes round 1, one nomination is drawn uniformly at random and persisted.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Each method enforces its own ballot rules server-side. Voting for your own picks
+          can be open, disabled, or capped via <code>max_self_votes</code> (<code>&lt;0</code>
+          unlimited, <code>0</code> none, <code>N</code> at most N — overrides the legacy
+          <code>allow_self_vote</code>). Nomination rules (<code>min</code> / <code>max</code> /
+          <code>required</code>) are enforced independently of the voting method.
+        </p>
+
+        <h2 id="api">API reference</h2>
+        <p>
+          The frontend is a single-page app served from the same origin as the API (so no
+          CORS). All poll endpoints are scoped by share <code>code</code>; mutations require
+          a session cookie obtained from create or join.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>GET</code></td><td><code>/api/health</code></td><td>Liveness check.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/features</code></td><td>Optional capabilities, e.g. <code>{"seerr": true, "admin": true}</code>.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/methods</code></td><td>Available voting methods and their default configs.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/genres?scope=</code></td><td>Library genres for a scope, for the genre picker.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/user/session</code></td><td>Jellyfin login state.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/api/user/login</code></td><td>Log in with Jellyfin; sets the identity cookie.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/api/user/logout</code></td><td>Clear the Jellyfin identity cookie.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/api/polls</code></td><td>Create a poll (creator becomes host). Requires login when enabled.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/polls/{code}</code></td><td>Poll state, including your participation.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/api/polls/{code}/join</code></td><td>Join as a guest (plus <code>{passcode}</code> when required).</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/polls/{code}/library?q=&type=&genre=</code></td><td>Search/browse the library (proxied).</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/polls/{code}/search-external?q=</code></td><td>Search Seerr/TMDB for write-ins (when enabled).</td></tr>
+              <tr><td><code>POST</code></td><td><code>/api/polls/{code}/nominations</code></td><td>Nominate a library title or a write-in.</td></tr>
+              <tr><td><code>DELETE</code></td><td><code>/api/polls/{code}/nominations/{id}</code></td><td>Withdraw your nomination.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/api/polls/{code}/advance</code></td><td>Host: advance the poll (round1 → round2 → closed).</td></tr>
+              <tr><td><code>POST</code></td><td><code>/api/polls/{code}/votes</code></td><td>Cast/replace your ballot.</td></tr>
+              <tr><td><code>POST</code></td><td><code>/api/polls/{code}/request/{id}</code></td><td>Host: request a winning write-in via Seerr.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/polls/{code}/results</code></td><td>Tally (when closed, or live if enabled).</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/polls/{code}/events</code></td><td>SSE stream of poll updates.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/items/{id}/image</code></td><td>Poster image proxy.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Admin endpoints exist only when the dashboard is enabled (otherwise every path below returns <code>404</code>). Sign-in is the shared <code>/api/user/login</code>.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>GET</code></td><td><code>/api/admin/session</code></td><td>Whether the caller is signed in and authorized.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/admin/polls</code></td><td>All polls (newest first) with counts + winner.</td></tr>
+              <tr><td><code>GET</code></td><td><code>/api/admin/polls/{code}</code></td><td>Full state of one poll (drill-down).</td></tr>
+              <tr><td><code>POST</code></td><td><code>/api/admin/polls/{code}/advance</code></td><td>Force the poll's state machine forward.</td></tr>
+              <tr><td><code>DELETE</code></td><td><code>/api/admin/polls/{code}</code></td><td>Delete a poll and all of its data.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Create-poll body:</p>
+        <div class="codeblock">
+          <div class="codeblock-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">POST /api/polls</span></div>
+          <button class="copy-btn" type="button">Copy</button>
+<pre><code>{
+  <span class="s">"title"</span>: <span class="s">"Movie Night"</span>,
+  <span class="s">"host_name"</span>: <span class="s">"Alex"</span>,
+  <span class="s">"library_scope"</span>: <span class="s">"movie"</span>,          <span class="c">// "movie" | "series" | "both"</span>
+  <span class="s">"submission_rules"</span>: { <span class="s">"min"</span>: 0, <span class="s">"max"</span>: 0, <span class="s">"required"</span>: 0 },
+  <span class="s">"voting_method"</span>: <span class="s">"approval"</span>,       <span class="c">// "approval" | "ranked" | "score" | "random"</span>
+  <span class="s">"voting_config"</span>: <span class="k">null</span>,             <span class="c">// method defaults used when null</span>
+  <span class="s">"allow_guests"</span>: <span class="k">true</span>,
+  <span class="s">"results_live"</span>: <span class="k">false</span>,
+  <span class="s">"reveal_nominators"</span>: <span class="k">false</span>,
+  <span class="s">"reveal_scope"</span>: <span class="s">"winner"</span>,          <span class="c">// "winner" | "all"</span>
+  <span class="s">"genres"</span>: [],                      <span class="c">// restrict nominations to these genres</span>
+  <span class="s">"allow_writeins"</span>: <span class="k">false</span>,          <span class="c">// needs Seerr</span>
+  <span class="s">"auto_request_winner"</span>: <span class="k">false</span>
+}</code></pre>
+        </div>
+
+        <h2 id="development">Development &amp; build</h2>
+        <p>Run the backend API on <code>:5859</code>; the frontend dev server proxies <code>/api</code> to it.</p>
+        <div class="codeblock">
+          <div class="codeblock-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">backend</span></div>
+          <button class="copy-btn" type="button">Copy</button>
+<pre><code>go test ./...                                   <span class="c"># backend tests</span>
+JELLYFIN_URL=<span class="s">http://localhost:8096</span> \
+JELLYFIN_API_KEY=<span class="s">...</span> \
+SEEURCHIN_ADDR=<span class="s">:5859</span> \
+go run ./cmd/seeurchin</code></pre>
+        </div>
+        <div class="codeblock" style="margin-top:16px;">
+          <div class="codeblock-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">frontend + build</span></div>
+          <button class="copy-btn" type="button">Copy</button>
+<pre><code>cd web && npm install && npm run dev            <span class="c"># hot-reload dev server :5173</span>
+
+<span class="c"># Full build: frontend → embed dir → static Go binary</span>
+npm --prefix web ci
+npm --prefix web run build                      <span class="c"># writes internal/httpapi/webdist/</span>
+CGO_ENABLED=0 go build -o seeurchin ./cmd/seeurchin
+
+docker build -t seeurchin:latest .             <span class="c"># multi-stage → distroless</span></code></pre>
+        </div>
+
+        <h2 id="architecture">Architecture</h2>
+        <ul>
+          <li><strong>Backend:</strong> Go — <code>chi</code> router, pure-Go SQLite via <code>modernc.org/sqlite</code> (no CGO), and the built frontend embedded with <code>embed.FS</code>.</li>
+          <li><strong>Frontend:</strong> SvelteKit (Svelte 5, static adapter, SPA) + Tailwind v4, wearing the "Reef" design system — semantic tokens that re-map for light and dark, so theming is automatic.</li>
+          <li><strong>Live updates:</strong> Server-Sent Events via an in-memory hub keyed by poll.</li>
+          <li><strong>Sessions:</strong> HMAC-signed, HTTP-only cookie holding a per-poll token map.</li>
+          <li><strong>Identity:</strong> guests by default behind an <code>auth.Provider</code> seam, plus optional Jellyfin login gating poll creation / write-in requests and authorizing admin.</li>
+        </ul>
+        <div class="callout">
+          New to the backend (or to Go)? The
+          <a href="https://github.com/skydeo/seeurchin/tree/main/docs/go-walkthrough">backend walkthrough</a>
+          is a chapter-by-chapter tour of the Go code aimed at developers coming from other API stacks.
+        </div>
+
+        <p style="margin-top:40px;">
+          <a class="btn btn-primary" href="https://github.com/skydeo/seeurchin">View the full source on GitHub →</a>
+        </p>
+      </article>
+    </div>
+  </main>
+
+  <footer>
+    <div class="wrap footer-inner">
+      <a class="brand" href="index.html">
+        <img src="brand/icons/seeurchin-mark.svg" alt="" style="width:24px;height:24px;" />
+        seeurchin
+      </a>
+      <nav class="footer-links">
+        <a href="index.html">Home</a>
+        <a href="https://github.com/skydeo/seeurchin">GitHub</a>
+        <a href="https://github.com/skydeo/seeurchin/issues">Issues</a>
+        <a href="https://jellyfin.org/">Jellyfin</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="site.js"></script>
+</body>
+</html>
