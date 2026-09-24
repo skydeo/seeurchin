@@ -34,6 +34,9 @@ const FILMS = (process.env.SEEURCHIN_SHOT_FILMS
   .map((s) => s.trim())
   .filter(Boolean);
 
+// Every ballot variant's heading (approval / ranked / score).
+const BALLOT = /Pick up to|You have \d+ votes|Rank your favorites|Rate each title/;
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // fetch helper that runs inside a page so cookies (session) are shared
@@ -164,7 +167,7 @@ async function captureMethodBallot(host, { method, cfg, fill, out }) {
   const items = await pickItems(host, code);
   for (const it of items) await nominate(host, code, it);
   await apiCall(host, 'POST', `/api/polls/${code}/advance`); // -> round2
-  await gotoPoll(host, code, 'Cast your vote');
+  await gotoPoll(host, code, BALLOT);
   await waitPosters(host);
   await fill(host, items);
   await sleep(350);
@@ -183,7 +186,7 @@ const run = async () => {
   // ---- HOME (create screen, dark) ----
   console.log('home…');
   await host.goto(ORIGIN, { waitUntil: 'domcontentloaded' });
-  await host.getByRole('button', { name: 'Create poll' }).waitFor({ timeout: 20000 });
+  await host.getByRole('button', { name: /Start poll/ }).waitFor({ timeout: 20000 });
   await sleep(700);
   await shot(host, 'home');
 
@@ -207,7 +210,7 @@ const run = async () => {
 
   // NOMINATE (host, round1)
   console.log('nominate…');
-  await gotoPoll(host, code, 'Nominations');
+  await gotoPoll(host, code, /Everyone’s picks/);
   await waitPosters(host);
   await shot(host, 'nominate');
 
@@ -221,11 +224,12 @@ const run = async () => {
 
   // VOTE (host, approval ballot — pick Arrival/Spider-Verse/Luca = rows 1,2,3)
   console.log('vote (approval)…');
-  await gotoPoll(host, code, 'Cast your vote');
+  await gotoPoll(host, code, BALLOT);
   await waitPosters(host);
-  const rows = host.locator('section .space-y-3 > div');
+  // single-vote approval rows are whole-row toggle buttons
+  const rows = host.locator('section button[aria-pressed]');
   for (const i of [1, 2, 3]) {
-    await rows.nth(i).getByRole('button', { name: 'Pick', exact: true }).click().catch(() => {});
+    await rows.nth(i).click().catch(() => {});
   }
   await sleep(300);
   await shot(host, 'vote');
@@ -238,7 +242,7 @@ const run = async () => {
 
   // RESULTS (host, dark)
   console.log('results (dark)…');
-  await gotoPoll(host, code, 'Full results');
+  await gotoPoll(host, code, 'How everyone voted');
   await waitPosters(host);
   await host.locator('.winner-pop button').first().click().catch(() => {});
   await sleep(250);
@@ -246,7 +250,7 @@ const run = async () => {
 
   // RESULTS (guest, light) — for the README light/dark theming comparison
   console.log('results (light)…');
-  await gotoPoll(guest, code, 'Full results');
+  await gotoPoll(guest, code, 'How everyone voted');
   await waitPosters(guest);
   await guest.locator('.winner-pop button').first().click().catch(() => {});
   await sleep(250);
@@ -275,10 +279,10 @@ const run = async () => {
     cfg: cfgOf('score'),
     out: 'vote-score',
     fill: async (page) => {
-      const r = page.locator('section .space-y-3 > div');
+      const r = page.getByRole('group', { name: /^Rate / });
       const pattern = [5, 4, 5, 3];
       for (let i = 0; i < pattern.length; i++) {
-        const stars = r.nth(i).getByRole('button', { name: '★' });
+        const stars = r.nth(i).getByRole('button');
         if ((await stars.count()) === 0) continue;
         await stars.nth(pattern[i] - 1).click().catch(() => {});
       }
@@ -317,7 +321,7 @@ const run = async () => {
       const hit = res.items.find((i) => i.image_tag) || res.items[0];
       if (hit) await nominate(host, gc, hit);
     }
-    await gotoPoll(host, gc, 'Nominations');
+    await gotoPoll(host, gc, /Everyone’s picks/);
     // Nominating clears the empty-state CTAs, so only the header button matches.
     await host.getByRole('button', { name: /Add titles/ }).click();
     await host.getByRole('button', { name: 'Movies', exact: true }).click().catch(() => {});

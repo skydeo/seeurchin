@@ -41,7 +41,7 @@
 
 <svelte:head><title>{poll ? poll.title : 'seeurchin'}</title></svelte:head>
 
-<main class="mx-auto max-w-3xl px-4 py-6">
+<main class="mx-auto max-w-3xl px-4 pb-4">
 	{#if loading}
 		<p class="py-20 text-center font-semibold text-muted">Loading…</p>
 	{:else if error}

@@ -177,6 +177,9 @@
 		font-weight: 700;
 		letter-spacing: 0.005em;
 		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		min-width: 0;
 		font-variant-numeric: tabular-nums;
 	}
 
