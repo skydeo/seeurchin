@@ -43,6 +43,10 @@ type Results struct {
 	Ranked    []Result      `json:"ranked"`
 	WinnerIDs []string      `json:"winner_ids"`
 	Rounds    []RoundResult `json:"rounds,omitempty"`
+	// TiedIDs lists the tallied co-winners when the host broke a tie at random
+	// (WinnerIDs then holds just the drawn one). Set by the poll service, never
+	// by a Method's Tally.
+	TiedIDs []string `json:"tied_ids,omitempty"`
 }
 
 // Method is a pluggable voting strategy.

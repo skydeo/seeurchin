@@ -58,22 +58,56 @@
 			window.prompt('Copy this link:', shareUrl);
 		}
 	}
+
+	// Invite opens the phone's share sheet when there is one (secure origins
+	// only), and falls back to copying the link.
+	async function invite() {
+		if (navigator.share && window.isSecureContext) {
+			try {
+				await navigator.share({ title: poll.title, text: `Help pick what we watch: ${poll.title}`, url: shareUrl });
+				return;
+			} catch (e) {
+				if (e instanceof DOMException && e.name === 'AbortError') return;
+			}
+		}
+		await copyLink();
+	}
 </script>
 
-<header class="mb-6">
-	<div class="flex items-center justify-between gap-3">
-		<a href="/" class="inline-flex items-center gap-1.5 text-sm font-bold text-accent hover:opacity-80">
-			<span>←</span>
-			<UrchinMark size={17} />
-			<span class="font-display text-[15px] font-semibold tracking-tight">seeurchin</span>
+<header class="mb-5">
+	<div class="-mx-2 flex h-14 items-center justify-between gap-2">
+		<a href="/" class="inline-flex h-11 items-center gap-1.5 px-2 text-accent-ink hover:opacity-80">
+			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+			<UrchinMark size={20} />
+			<span class="font-display text-lg font-semibold tracking-tight">seeurchin</span>
 		</a>
-		<ThemeToggle />
+		<div class="flex items-center gap-2 pr-2">
+			<button
+				type="button"
+				onclick={invite}
+				class="inline-flex h-10 items-center gap-2 rounded-full bg-primary px-4 text-[15px] font-extrabold text-on-primary transition hover:bg-primary-deep"
+			>
+				{#if copied}
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10" /></svg>
+					Link copied
+				{:else}
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></svg>
+					Invite
+				{/if}
+			</button>
+			<ThemeToggle />
+		</div>
 	</div>
 
-	<div class="mt-3 flex items-center gap-2.5">
-		<h1 class="font-display text-2xl font-semibold tracking-tight text-ink sm:text-[28px]">{poll.title}</h1>
+	<div class="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
 		<span class="pill {statusClass[poll.status]}">{statusLabel[poll.status]}</span>
+		<span class="text-sm font-bold text-muted">
+			{poll.participant_count} {poll.participant_count === 1 ? 'person' : 'people'}{poll.status !== 'round1' ? ` · ${poll.voter_count} voted` : ''}
+			·
+			<button type="button" onclick={copyLink} class="rounded px-0.5 font-extrabold tracking-[0.12em] text-ink underline decoration-line2 decoration-2 underline-offset-4 hover:decoration-accent" title="Copy share link" aria-label="Poll code {poll.code}, copy share link">{poll.code}</button>
+		</span>
 	</div>
+	<h1 class="mt-2 font-display text-[28px] leading-[1.15] font-bold tracking-tight text-ink [overflow-wrap:anywhere] sm:text-[32px]">{poll.title}</h1>
 
 	{#if poll.timer}
 		<div class="mt-2.5">
@@ -87,25 +121,4 @@
 			<HostTimerControls {poll} {code} {update} />
 		{/if}
 	{/if}
-
-	<div class="mt-2.5">
-		<button
-			onclick={copyLink}
-			class="inline-flex items-center gap-2 rounded-[10px] border border-line bg-surface3 px-2.5 py-1.5 text-ink"
-			title="Copy share link"
-		>
-			<span class="font-title font-bold tracking-[0.16em]">{poll.code}</span>
-			<span class="text-xs font-bold text-accent">{copied ? '✓ copied' : 'copy link'}</span>
-		</button>
-	</div>
-
-	<div class="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] font-semibold text-muted">
-		<span>{poll.participant_count} {poll.participant_count === 1 ? 'person' : 'people'}</span>
-		{#if poll.status !== 'round1'}
-			<span class="text-faint">·</span>
-			<span>{poll.voter_count} voted</span>
-		{/if}
-		<span class="text-faint">·</span>
-		<span>{poll.voting_method_label}</span>
-	</div>
 </header>

@@ -15,7 +15,13 @@
 	// fall back to an empty object so the per-method reads below use defaults
 	// instead of throwing on a null deref.
 	const cfg = (poll.voting_config ?? {}) as Record<string, number | boolean>;
-	const allowSelf = cfg.allow_self_vote !== false;
+	// max_self_votes (when present) is authoritative over the legacy
+	// allow_self_vote bool — mirrors selfVoteLimit in internal/voting.
+	// A positive cap is enforced server-side; here only "none" blocks.
+	const allowSelf =
+		cfg.max_self_votes === undefined || cfg.max_self_votes === null
+			? cfg.allow_self_vote !== false
+			: Number(cfg.max_self_votes) !== 0;
 	const noms = $derived(poll.nominations);
 	const isHost = $derived(poll.me?.is_host ?? false);
 
@@ -104,121 +110,138 @@
 	}
 </script>
 
-<section class="space-y-5">
-	<div class="flex items-start justify-between gap-3">
-		<div>
-			<h2 class="font-title text-lg font-bold text-ink">Cast your vote</h2>
-			{#if poll.me?.has_voted}
-				<p class="mt-0.5 text-[13px] font-bold text-accent-ink">✓ You've voted — change it anytime before it closes.</p>
-			{:else if method === 'approval'}
-				<p class="mt-0.5 text-[13px] font-semibold text-muted">
-					{maxPer === 1 ? `Choose up to ${votesPerUser}` : `You have ${votesPerUser} votes`} ·
-					<span class="font-extrabold" class:text-mango={remaining === 0}>{remaining} left</span>
-				</p>
-			{:else if method === 'ranked'}
-				<p class="mt-0.5 text-[13px] font-semibold text-muted">Tap titles to rank them, best first.</p>
-			{:else}
-				<p class="mt-0.5 text-[13px] font-semibold text-muted">Rate each title up to {maxScore}.</p>
-			{/if}
-		</div>
-	</div>
+{#snippet check(size: number)}
+	<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10" /></svg>
+{/snippet}
 
-	{#if error}<p class="text-sm font-semibold text-coral-ink">{error}</p>{/if}
+<section>
+	<div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+		{#if method === 'approval'}
+			<h2 class="section-h">{maxPer === 1 ? `Pick up to ${votesPerUser}` : `You have ${votesPerUser} votes`}</h2>
+			<div class="flex items-center gap-2">
+				{#if votesPerUser <= 8}
+					<span class="flex gap-1" aria-hidden="true">
+						{#each Array(votesPerUser) as _, i (i)}
+							<span class="h-2 w-5 rounded-full {i < used ? 'bg-accent' : 'bg-line2'}"></span>
+						{/each}
+					</span>
+				{/if}
+				<span class="text-sm font-extrabold {remaining === 0 ? 'text-mango-ink' : 'text-accent-ink'}">{remaining} left</span>
+			</div>
+		{:else if method === 'ranked'}
+			<h2 class="section-h">Rank your favorites</h2>
+			<span class="text-sm font-semibold text-muted">Best first{maxRanked > 0 ? ` · up to ${maxRanked}` : ''}</span>
+		{:else}
+			<h2 class="section-h">Rate each title</h2>
+			<span class="text-sm font-semibold text-muted">Up to {maxScore} stars</span>
+		{/if}
+	</div>
+	{#if poll.me?.has_voted}
+		<p class="mt-1.5 flex items-center gap-1.5 text-sm font-bold text-accent-ink">{@render check(14)} Vote saved. You can change it until voting closes.</p>
+	{/if}
 
 	{#if method === 'ranked'}
-		<!-- Ranked-choice: ordered picks then the rest. -->
 		{#if ranking.length > 0}
-			<ol class="space-y-2">
+			<ol class="mt-3 space-y-2">
 				{#each ranking as id, i (id)}
-					<li class="flex items-center gap-3 rounded-[14px] border border-line bg-surface p-2 shadow-sm">
-						<span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary text-sm font-bold text-on-primary">{i + 1}</span>
-						<span class="flex-1 truncate text-sm font-bold text-ink">{titleOf(id)}</span>
+					<li class="flex items-center gap-3 rounded-2xl border border-line bg-surface p-2 pl-3">
+						<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary text-sm font-extrabold text-on-primary">{i + 1}</span>
+						<span class="min-w-0 flex-1 truncate text-base font-bold text-ink">{titleOf(id)}</span>
 						<div class="flex items-center gap-1">
-							<button onclick={() => moveRank(i, -1)} disabled={i === 0} class="grid h-[30px] w-[30px] place-items-center rounded-lg border-[1.5px] border-line bg-surface3 font-bold text-muted disabled:opacity-30">↑</button>
-							<button onclick={() => moveRank(i, 1)} disabled={i === ranking.length - 1} class="grid h-[30px] w-[30px] place-items-center rounded-lg border-[1.5px] border-line bg-surface3 font-bold text-muted disabled:opacity-30">↓</button>
-							<button onclick={() => removeRank(id)} class="grid h-[30px] w-[30px] place-items-center rounded-lg border-[1.5px] border-line bg-surface3 font-bold text-coral-ink">✕</button>
+							<button onclick={() => moveRank(i, -1)} disabled={i === 0} aria-label="Move {titleOf(id)} up" class="grid h-10 w-10 place-items-center rounded-xl bg-surface3 text-ink disabled:opacity-30">
+								<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6" /></svg>
+							</button>
+							<button onclick={() => moveRank(i, 1)} disabled={i === ranking.length - 1} aria-label="Move {titleOf(id)} down" class="grid h-10 w-10 place-items-center rounded-xl bg-surface3 text-ink disabled:opacity-30">
+								<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+							</button>
+							<button onclick={() => removeRank(id)} aria-label="Remove {titleOf(id)}" class="grid h-10 w-10 place-items-center rounded-xl bg-surface3 text-coral-ink">
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+							</button>
 						</div>
 					</li>
 				{/each}
 			</ol>
 		{/if}
-		{#if maxRanked > 0}
-			<p class="text-xs font-semibold text-faint">Rank up to {maxRanked}.</p>
-		{/if}
 		{#if unranked.length > 0}
-			<div>
-				<h3 class="mb-2 font-title text-xs font-bold uppercase tracking-[0.12em] text-faint">Tap to add</h3>
-				<div class="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
-					{#each unranked as n (n.id)}
-						<button onclick={() => addRank(n.id)} class="min-w-0 text-left">
-							<PosterImage itemId={n.item_id} tag={n.image_tag} posterUrl={n.poster_url ?? ''} title={n.title} />
-							<p class="mt-1.5 truncate text-[13px] font-bold text-ink">{n.title}</p>
-						</button>
-					{/each}
-				</div>
+			<h3 class="mt-5 mb-2 text-[15px] font-extrabold text-muted">{ranking.length === 0 ? 'Tap your favorite first' : 'Tap to add next'}</h3>
+			<div class="grid grid-cols-3 gap-x-3 gap-y-4 sm:grid-cols-4 md:grid-cols-5">
+				{#each unranked as n (n.id)}
+					<button onclick={() => addRank(n.id)} disabled={maxRanked > 0 && ranking.length >= maxRanked} class="min-w-0 text-left transition active:scale-[0.97] disabled:opacity-40">
+						<PosterImage itemId={n.item_id} tag={n.image_tag} posterUrl={n.poster_url ?? ''} title={n.title} />
+						<p class="mt-1.5 truncate text-sm font-bold text-ink">{n.title}</p>
+					</button>
+				{/each}
 			</div>
 		{/if}
 	{:else}
-		<!-- approval / score: one row per nomination. -->
-		<div class="space-y-3">
+		<div class="mt-3 space-y-2.5">
 			{#each noms as n (n.id)}
 				{@const mine = n.mine_nominated}
 				{@const blocked = selfBlocked(mine)}
-				<div class="flex items-center gap-3 rounded-[14px] border border-line bg-surface p-2.5 shadow-sm {blocked ? 'opacity-50' : ''}">
-					<div class="h-16 w-11 shrink-0 overflow-hidden rounded-md">
-						<PosterImage itemId={n.item_id} tag={n.image_tag} posterUrl={n.poster_url ?? ''} title={n.title} />
-					</div>
-					<div class="min-w-0 flex-1">
-						<p class="truncate text-sm font-bold text-ink">{n.title}</p>
-						<p class="text-xs font-semibold text-faint">
-							{n.year || ''}{mine ? ' · your nomination' : ''}
-						</p>
-					</div>
-
-					{#if blocked}
-						<span class="text-xs font-semibold text-faint">can't self-vote</span>
-					{:else if method === 'approval'}
-						{#if maxPer === 1}
-							<button
-								onclick={() => bumpApproval(n.id, (selections[n.id] ?? 0) > 0 ? -1 : 1, mine)}
-								class="rounded-[10px] border-[1.5px] px-3.5 py-2.5 text-[13px] font-extrabold transition {(selections[n.id] ?? 0) > 0 ? 'border-accent bg-accent text-white' : 'border-line bg-surface3 text-muted'}"
-							>
-								{(selections[n.id] ?? 0) > 0 ? '✓ Picked' : 'Pick'}
-							</button>
-						{:else}
-							<div class="flex items-center gap-2">
-								<button onclick={() => bumpApproval(n.id, -1, mine)} class="grid h-8 w-8 place-items-center rounded-lg border-[1.5px] border-line bg-surface3 text-lg leading-none font-bold text-ink">−</button>
-								<span class="w-5 text-center text-sm font-extrabold text-ink">{selections[n.id] ?? 0}</span>
-								<button onclick={() => bumpApproval(n.id, 1, mine)} class="grid h-8 w-8 place-items-center rounded-lg border-[1.5px] border-line bg-surface3 text-lg leading-none font-bold text-ink">+</button>
+				{@const sel = selections[n.id] ?? 0}
+				{@const meta = [n.year || '', mine ? 'Your pick' : ''].filter(Boolean).join(' · ')}
+				{#if method === 'approval' && maxPer === 1 && !blocked}
+					<!-- Single-vote approval: the whole row is the toggle. -->
+					<button
+						onclick={() => bumpApproval(n.id, sel > 0 ? -1 : 1, mine)}
+						aria-pressed={sel > 0}
+						disabled={sel === 0 && remaining <= 0}
+						class="flex w-full items-center gap-3 rounded-2xl border-[1.5px] p-2 pr-3.5 text-left transition active:scale-[0.99] {sel > 0 ? 'border-accent bg-accent/10' : 'border-line bg-surface'} disabled:opacity-50"
+					>
+						<div class="w-[46px] shrink-0 [&_.poster]:rounded-lg"><PosterImage itemId={n.item_id} tag={n.image_tag} posterUrl={n.poster_url ?? ''} title={n.title} /></div>
+						<div class="min-w-0 flex-1">
+							<p class="truncate text-[17px] font-extrabold text-ink">{n.title}</p>
+							{#if meta}<p class="text-sm font-semibold text-muted">{meta}</p>{/if}
+						</div>
+						<span class="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full border-2 {sel > 0 ? 'border-accent bg-accent text-on-accent' : 'border-line2'}">
+							{#if sel > 0}{@render check(16)}{/if}
+						</span>
+					</button>
+				{:else}
+					<div class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border-[1.5px] border-line bg-surface p-2 pr-3.5 {blocked ? 'opacity-60' : ''}">
+						<div class="w-[46px] shrink-0 [&_.poster]:rounded-lg"><PosterImage itemId={n.item_id} tag={n.image_tag} posterUrl={n.poster_url ?? ''} title={n.title} /></div>
+						<div class="min-w-0 flex-1">
+							<p class="truncate text-[17px] font-extrabold text-ink">{n.title}</p>
+							{#if meta}<p class="text-sm font-semibold text-muted">{meta}</p>{/if}
+							{#if !blocked && method === 'score'}
+								<div class="mt-1 -ml-1.5 flex flex-wrap" role="group" aria-label="Rate {n.title}">
+									{#each Array(maxScore) as _, i (i)}
+										<button onclick={() => setScore(n.id, i + 1, mine)} aria-label="{i + 1} of {maxScore}" aria-pressed={sel >= i + 1} class="grid h-9 w-8 place-items-center text-[24px] leading-none {sel >= i + 1 ? 'text-mango' : 'text-line2'}">★</button>
+									{/each}
+								</div>
+							{/if}
+						</div>
+						{#if blocked}
+							<span class="text-sm font-semibold text-faint">Can’t vote for your own</span>
+						{:else if method === 'approval'}
+							<div class="stepper">
+								<button onclick={() => bumpApproval(n.id, -1, mine)} disabled={sel === 0} aria-label="Remove a vote from {n.title}">−</button>
+								<span>{sel}</span>
+								<button onclick={() => bumpApproval(n.id, 1, mine)} disabled={remaining <= 0 || (maxPer > 0 && sel >= maxPer)} aria-label="Add a vote to {n.title}">+</button>
 							</div>
 						{/if}
-					{:else}
-						<!-- score: stars -->
-						<div class="flex items-center gap-0.5">
-							{#each Array(maxScore) as _, i (i)}
-								<button onclick={() => setScore(n.id, i + 1, mine)} class="p-0.5 text-[22px] leading-none {(selections[n.id] ?? 0) >= i + 1 ? 'text-mango' : 'text-line2'}">★</button>
-							{/each}
-						</div>
-					{/if}
-				</div>
+					</div>
+				{/if}
 			{/each}
 		</div>
 	{/if}
 
-	<button onclick={submit} disabled={busy} class="btn btn-primary w-full">
-		{busy ? 'Saving…' : poll.me?.has_voted ? 'Update my vote' : 'Submit vote'}
-	</button>
-
 	{#if poll.results_live && poll.results}
-		<LiveResults {poll} />
+		<div class="mt-6"><LiveResults {poll} /></div>
 	{/if}
 
-	{#if isHost && !poll.timer}
-		<div class="rounded-[20px] border border-line bg-surface2 p-4">
-			<p class="text-[13px] font-semibold text-muted">{poll.voter_count} of {poll.participant_count} have voted.</p>
-			<button onclick={async () => update(await api.advance(code))} class="btn btn-coral mt-3 w-full">
-				Reveal results & close →
-			</button>
-		</div>
-	{/if}
+	<div class="action-bar space-y-2.5">
+		{#if error}<p class="text-sm font-bold text-coral-ink" role="alert">{error}</p>{/if}
+		{#if isHost && !poll.timer}
+			<div class="flex items-center justify-between gap-3">
+				<span class="text-sm font-bold text-muted">Hosting · {poll.voter_count} of {poll.participant_count} voted</span>
+				<button onclick={async () => update(await api.advance(code))} class="h-10 shrink-0 rounded-xl border-[1.5px] border-coral px-3.5 text-[15px] font-extrabold text-coral-ink transition hover:bg-coral/10">
+					Reveal results
+				</button>
+			</div>
+		{/if}
+		<button onclick={submit} disabled={busy} class="btn btn-primary h-[54px] w-full text-[17px]">
+			{busy ? 'Saving…' : poll.me?.has_voted ? 'Update my vote' : 'Submit vote'}
+		</button>
+	</div>
 </section>

@@ -56,6 +56,7 @@ export const api = {
 	withdraw: (code: string, id: string) =>
 		req<PollView>('DELETE', `/api/polls/${code}/nominations/${id}`),
 	advance: (code: string) => req<PollView>('POST', `/api/polls/${code}/advance`),
+	breakTie: (code: string) => req<PollView>('POST', `/api/polls/${code}/tiebreak`),
 	startTimer: (code: string) => req<PollView>('POST', `/api/polls/${code}/timer/start`),
 	pauseTimer: (code: string) => req<PollView>('POST', `/api/polls/${code}/timer/pause`),
 	extendTimer: (code: string, add_seconds: number) =>

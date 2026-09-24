@@ -60,6 +60,7 @@ export interface ResultsView {
 	winners: ResultEntry[];
 	ranked: ResultEntry[];
 	rounds?: RoundResult[];
+	tied_ids?: string[]; // co-winners a random tie-break chose between
 }
 
 export type DeadlineMode = 'none' | 'quick' | 'scheduled';

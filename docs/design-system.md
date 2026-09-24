@@ -61,7 +61,7 @@ teal (Voting), sun (Results).
 
 ### Type
 - `font-display` → **Baloo 2** — wordmark, poll titles, winner title.
-- `font-title` → **Quicksand** — section headers, control labels, eyebrows, codes.
+- `font-title` → **Nunito** (was Quicksand; kept as a token so it can diverge again) — pills, badges, codes.
 - `font-sans` (default) → **Nunito** — all body/UI text. (Loaded in `app.html`.)
 
 ### Radii
@@ -77,10 +77,25 @@ Prefer these for the "designed" elements; use Tailwind utilities for layout
 - **Buttons:** `.btn` + one of `.btn-primary` (ocean), `.btn-coral` (host CTA),
   `.btn-ghost`; size with `.btn-sm`.
 - **Inputs:** `.input` (+ `.input-code` for the share-code field), `.select`.
+  Both are **16px on purpose** — iOS Safari zooms the page when a smaller
+  input is focused, which made pages slip sideways on phones. Don't shrink them.
 - **Containers:** `.card`, `.panel`.
 - **Choosers:** `.opt` (segmented) and `.chip` (genre/filter). Selected state:
   add `is-on` (e.g. `class:is-on={selected}`).
-- **Switch:** `.switch` with `role="switch" aria-checked={bool}`.
+- **Segmented control:** `.seg` wrapping `<button aria-pressed>`s — the default
+  for 2–4 mutually exclusive options (scope, timer mode, filters).
+- **Choice card:** `.choice` (`aria-pressed`) with `.ico` + text + `.radio` —
+  for options that need a one-line explanation (voting methods).
+- **Settings list:** `.settings` > `.settings-row` (`.lbl` / `.sub`), headed by
+  `.settings-title`. (Not `.group` — that name is Tailwind's group marker.)
+- **Stepper:** `.stepper` (− value +) instead of bare number inputs.
+- **Switch:** `.switch`, either standalone with `role="switch" aria-checked`, or
+  as a span inside a `role="switch" aria-checked` button (styled from the parent).
+- **Action bar:** `.action-bar` — sticky bottom bar for a screen's main action;
+  place it as the last child of a `px-4` container (it bleeds to the edges).
+- **Sheets:** `.overlay` + `.sheet` (`.sheet-body` scrolls); always pair an open
+  sheet/overlay with `lockScroll()` from `$lib/scrollLock` so iOS can't scroll
+  the page behind it.
 - **Status pill:** `.pill` + `.pill-round1|round2|closed|draft`.
 - **Posters:** `.poster` (+ `.poster-fallback` for the no-image state),
   `.badge` + `.badge-yours|count|req`, `.poster-pick` + `.poster-pick-on|lib`.

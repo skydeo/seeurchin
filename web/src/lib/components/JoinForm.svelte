@@ -32,8 +32,8 @@
 <div class="card mx-auto max-w-sm p-6">
 	{#if poll.allow_guests}
 		<div class="mb-3.5 flex justify-center"><UrchinMark size={46} /></div>
-		<h2 class="text-center font-title text-lg font-bold text-ink">Join “{poll.title}”</h2>
-		<p class="mt-1.5 text-center text-sm font-semibold text-muted">Pick a name so others know who's voting.</p>
+		<h2 class="text-center font-display text-2xl leading-tight font-bold text-ink [overflow-wrap:anywhere]">Join “{poll.title}”</h2>
+		<p class="mt-1.5 text-center text-[15px] font-semibold text-muted">Pick a name so others know who’s voting.</p>
 		<form onsubmit={join} class="mt-4 space-y-3">
 			<input
 				bind:value={name}

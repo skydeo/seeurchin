@@ -18,7 +18,7 @@
 @theme {
 	--font-sans: 'Nunito', system-ui, sans-serif;
 	--font-display: 'Baloo 2', system-ui, sans-serif; /* wordmark / hero numerals */
-	--font-title: 'Quicksand', system-ui, sans-serif; /* section + control labels */
+	--font-title: 'Nunito', system-ui, sans-serif; /* section + control labels (was Quicksand; two faces read calmer) */
 
 	/* ---- surfaces & text (LIGHT) ---- */
 	--color-bg: #fdf7ec;          /* sand */
@@ -29,8 +29,8 @@
 	--color-line: #ece2cf;
 	--color-line2: #e0d3b6;
 	--color-ink: #143a45;         /* primary text */
-	--color-muted: #50707a;       /* secondary text */
-	--color-faint: #93a4ab;       /* tertiary text */
+	--color-muted: #4a6770;       /* secondary text (≈5:1 on sand) */
+	--color-faint: #5b7279;       /* tertiary text — still ≥4.5:1 on sand for legibility */
 
 	/* ---- brand roles ---- */
 	--color-primary: #0e5a7d;     /* ocean — primary actions */
@@ -43,6 +43,9 @@
 	--color-sun: #ffce5c;         /* winner celebration */
 	--color-on-primary: #ffffff;  /* text on ocean */
 	--color-on-coral: #3a140d;    /* text on coral */
+	--color-on-accent: #ffffff;   /* text/icons on teal */
+	--color-mango-ink: #8a4f00;   /* mango as text on light surfaces */
+	--color-sun-ink: #7a5600;     /* sun as text on light surfaces */
 
 	/* ---- radii ---- */
 	--radius-sm: 10px;
@@ -63,7 +66,7 @@
 	--color-line2: rgba(206, 232, 230, 0.22);
 	--color-ink: #e9f3f1;
 	--color-muted: #a3c0c5;
-	--color-faint: #6f9298;
+	--color-faint: #86a8ae;
 
 	--color-primary: #1d7aa3;     /* brighter ocean for dark */
 	--color-primary-deep: #14628a;
@@ -75,6 +78,9 @@
 	--color-sun: #ffd76e;
 	--color-on-primary: #ffffff;
 	--color-on-coral: #2a0f0a;
+	--color-on-accent: #062a36;   /* bright teal needs dark ink */
+	--color-mango-ink: #ffb056;
+	--color-sun-ink: #ffd76e;
 }
 [data-theme='light'] { color-scheme: light; }
 
@@ -85,7 +91,14 @@ html,
 body {
 	min-height: 100%;
 }
+html {
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
 body {
+	/* Backstop against any stray wide element letting the whole page pan
+	   sideways on phones. `clip` (not `hidden`) keeps position: sticky working. */
+	overflow-x: clip;
 	font-family: var(--font-sans);
 	background:
 		radial-gradient(900px 520px at 88% -8%, color-mix(in srgb, var(--color-accent) 14%, transparent), transparent 60%),
@@ -149,7 +162,9 @@ input[type='number']::-webkit-outer-spin-button {
 		border: 1.5px solid var(--color-line);
 		color: var(--color-ink);
 		padding: 0.72rem 0.9rem;
-		font-size: 0.95rem;
+		/* ≥16px: iOS Safari zooms the whole page when a smaller input is focused,
+		   which is what made pages "slip" sideways on phones. */
+		font-size: 1rem;
 		font-weight: 600;
 		outline: none;
 		transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -170,7 +185,7 @@ input[type='number']::-webkit-outer-spin-button {
 		border: 1.5px solid var(--color-line);
 		color: var(--color-ink);
 		padding: 0.5rem 0.6rem;
-		font-size: 0.85rem;
+		font-size: 1rem; /* ≥16px — see .input */
 		font-weight: 700;
 		outline: none;
 	}
@@ -214,8 +229,9 @@ input[type='number']::-webkit-outer-spin-button {
 		background: var(--color-surface);
 		color: var(--color-muted);
 		border-radius: 999px;
-		padding: 0.35rem 0.8rem;
-		font-size: 0.82rem;
+		min-height: 2.25rem;
+		padding: 0.4rem 0.9rem;
+		font-size: 0.875rem;
 		font-weight: 700;
 		transition: all 0.14s ease;
 		cursor: pointer;
@@ -231,9 +247,8 @@ input[type='number']::-webkit-outer-spin-button {
 	.chip-genre.is-on {
 		background: color-mix(in srgb, var(--color-mango) 18%, transparent);
 		border-color: var(--color-mango);
-		color: #b8841a;
+		color: var(--color-mango-ink);
 	}
-	[data-theme='dark'] .chip-genre.is-on { color: var(--color-mango); }
 	/* Hide the scrollbar on the horizontally scrollable genre row. */
 	.genre-scroll {
 		scrollbar-width: none;
@@ -244,8 +259,8 @@ input[type='number']::-webkit-outer-spin-button {
 	/* ---- toggle switch ---- */
 	.switch {
 		position: relative;
-		width: 2.9rem;
-		height: 1.7rem;
+		width: 3.25rem;
+		height: 2rem;
 		border-radius: 999px;
 		background: var(--color-surface3);
 		border: 1.5px solid var(--color-line2);
@@ -258,15 +273,17 @@ input[type='number']::-webkit-outer-spin-button {
 		position: absolute;
 		top: 2px;
 		left: 2px;
-		width: 1.2rem;
-		height: 1.2rem;
+		width: 1.55rem;
+		height: 1.55rem;
 		border-radius: 999px;
 		background: #fff;
 		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 		transition: transform 0.18s ease;
 	}
+	[aria-checked='true'] > .switch,
 	.switch[aria-checked='true'] { background: var(--color-accent); border-color: var(--color-accent); }
-	.switch[aria-checked='true']::after { transform: translateX(1.2rem); }
+	[aria-checked='true'] > .switch::after,
+	.switch[aria-checked='true']::after { transform: translateX(1.25rem); }
 
 	/* ---- status pill ---- */
 	.pill {
@@ -275,17 +292,16 @@ input[type='number']::-webkit-outer-spin-button {
 		gap: 0.4rem;
 		padding: 0.25rem 0.65rem;
 		border-radius: 999px;
-		font-size: 0.72rem;
+		font-size: 0.8rem;
 		font-weight: 800;
 		font-family: var(--font-title);
-		letter-spacing: 0.04em;
+		letter-spacing: 0.01em;
 	}
 	.pill::before { content: ''; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
-	.pill-round1 { background: color-mix(in srgb, var(--color-mango) 16%, transparent); color: var(--color-mango); }
+	.pill-round1 { background: color-mix(in srgb, var(--color-mango) 18%, transparent); color: var(--color-mango-ink); }
 	.pill-round2 { background: color-mix(in srgb, var(--color-accent) 16%, transparent); color: var(--color-accent-ink); }
-	.pill-closed { background: color-mix(in srgb, var(--color-sun) 20%, transparent); color: #b8841a; }
+	.pill-closed { background: color-mix(in srgb, var(--color-sun) 24%, transparent); color: var(--color-sun-ink); }
 	.pill-draft  { background: var(--color-surface3); color: var(--color-muted); }
-	[data-theme='dark'] .pill-closed { color: var(--color-sun); }
 
 	/* ---- poster ---- */
 	.poster {
@@ -349,6 +365,163 @@ input[type='number']::-webkit-outer-spin-button {
 	.bar { height: 0.55rem; border-radius: 999px; background: var(--color-surface3); overflow: hidden; }
 	.bar > i { display: block; height: 100%; border-radius: 999px; background: var(--color-line2); }
 	.bar-win > i { background: linear-gradient(90deg, var(--color-accent), var(--color-mango)); }
+
+	/* ---- segmented control (one pill track, selected segment raised) ---- */
+	.seg {
+		display: grid;
+		grid-auto-columns: minmax(0, 1fr);
+		grid-auto-flow: column;
+		gap: 4px;
+		padding: 4px;
+		border-radius: var(--radius-md);
+		background: var(--color-surface3);
+	}
+	.seg > button {
+		min-height: 2.5rem;
+		border-radius: 10px;
+		color: var(--color-muted);
+		font-size: 0.95rem;
+		font-weight: 700;
+		padding: 0 0.4rem;
+		transition: background 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
+		cursor: pointer;
+	}
+	.seg > button:hover { color: var(--color-ink); }
+	.seg > button[aria-pressed='true'] {
+		background: var(--color-surface);
+		color: var(--color-ink);
+		font-weight: 800;
+		box-shadow: 0 1px 3px rgba(20, 58, 69, 0.16);
+	}
+	[data-theme='dark'] .seg > button[aria-pressed='true'] { background: var(--color-surface2); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); }
+
+	/* ---- choice card (radio-like, icon + title + one-liner) ---- */
+	.choice {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		width: 100%;
+		min-height: 4.25rem;
+		padding: 0.75rem;
+		border-radius: var(--radius-md);
+		border: 1.5px solid var(--color-line);
+		background: var(--color-surface);
+		text-align: left;
+		color: var(--color-ink);
+		transition: border-color 0.14s ease, background 0.14s ease;
+		cursor: pointer;
+	}
+	.choice:hover { border-color: var(--color-line2); }
+	.choice[aria-pressed='true'] {
+		border-color: var(--color-accent);
+		box-shadow: inset 0 0 0 0.5px var(--color-accent);
+		background: color-mix(in srgb, var(--color-accent) 9%, var(--color-surface));
+	}
+	.choice .ico {
+		display: grid;
+		place-items: center;
+		width: 2.5rem;
+		height: 2.5rem;
+		flex-shrink: 0;
+		border-radius: 12px;
+		background: var(--color-surface3);
+		color: var(--color-primary);
+	}
+	[data-theme='dark'] .choice .ico { color: var(--color-accent-ink); }
+	.choice[aria-pressed='true'] .ico { background: var(--color-accent); color: var(--color-on-accent); }
+	.choice .radio {
+		display: grid;
+		place-items: center;
+		width: 1.4rem;
+		height: 1.4rem;
+		flex-shrink: 0;
+		border-radius: 999px;
+		border: 2px solid var(--color-line2);
+		color: var(--color-on-accent);
+	}
+	.choice[aria-pressed='true'] .radio { background: var(--color-accent); border-color: var(--color-accent); }
+
+	/* ---- grouped settings list (not `.group` — that's Tailwind's group marker) (inset rows with dividers) ---- */
+	.settings {
+		background: var(--color-surface);
+		border: 1px solid var(--color-line);
+		border-radius: 16px;
+		overflow: hidden;
+	}
+	.settings > * + * { border-top: 1px solid var(--color-line); }
+	.settings-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		width: 100%;
+		min-height: 3.6rem;
+		padding: 0.6rem 0.75rem 0.6rem 1rem;
+		text-align: left;
+	}
+	.settings-row .lbl { font-size: 1rem; font-weight: 700; color: var(--color-ink); }
+	.settings-row .sub { display: block; font-size: 0.82rem; font-weight: 600; color: var(--color-faint); margin-top: 1px; }
+	.settings-title { margin: 0 0.25rem 0.5rem; font-size: 0.875rem; font-weight: 800; color: var(--color-muted); }
+
+	/* ---- stepper (− value +) ---- */
+	.stepper { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+	.stepper > button {
+		display: grid;
+		place-items: center;
+		width: 2.5rem;
+		height: 2.5rem;
+		border-radius: 12px;
+		background: var(--color-surface3);
+		color: var(--color-ink);
+		font-size: 1.25rem;
+		font-weight: 700;
+		line-height: 1;
+		cursor: pointer;
+	}
+	.stepper > button:disabled { opacity: 0.35; cursor: default; }
+	.stepper > span { min-width: 2.5rem; text-align: center; font-size: 1rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+	/* ---- action bar pinned to the bottom of the viewport ---- */
+	.action-bar {
+		position: sticky;
+		bottom: 0;
+		z-index: 30;
+		margin: 1.25rem -1rem 0;
+		padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+		background: color-mix(in srgb, var(--color-bg) 94%, transparent);
+		border-top: 1px solid var(--color-line);
+		backdrop-filter: blur(8px);
+		-webkit-backdrop-filter: blur(8px);
+	}
+
+	/* ---- full-height sheet / overlay ----
+	   100dvh tracks the iOS toolbar collapsing, so the sheet doesn't jump;
+	   pair with lockScroll() so the page behind can't scroll. */
+	.overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 50;
+		background: rgba(8, 24, 30, 0.45);
+		overscroll-behavior: contain;
+	}
+	.sheet {
+		position: fixed;
+		inset: auto 0 0 0;
+		z-index: 51;
+		height: calc(100dvh - 2.5rem);
+		display: flex;
+		flex-direction: column;
+		background: var(--color-bg);
+		border-radius: 24px 24px 0 0;
+		box-shadow: 0 -12px 40px -16px rgba(0, 0, 0, 0.4);
+	}
+	@media (min-width: 640px) {
+		.sheet { left: 50%; right: auto; width: 36rem; transform: translateX(-50%); height: min(calc(100dvh - 4rem), 52rem); bottom: 2rem; border-radius: 24px; }
+	}
+	.sheet-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+
+	/* ---- small uppercase-free section heading ---- */
+	.section-h { font-size: 1.05rem; font-weight: 800; color: var(--color-ink); }
 
 	/* ---- winner card pop (enhancement only — never gates visibility) ---- */
 	.winner-pop { animation: winner-pop 0.5s cubic-bezier(0.18, 0.8, 0.3, 1.25) both; }

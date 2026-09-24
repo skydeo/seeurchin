@@ -29,6 +29,9 @@ type Repository interface {
 	// SetPollWinner freezes the decided winner (for methods that decide without
 	// a voting round, e.g. random) and stamps decided_at.
 	SetPollWinner(ctx context.Context, id, nominationID string) error
+	// SetPollWinnerIfUnset freezes a winner only if none is frozen yet,
+	// reporting whether it did — so two concurrent tie-breaks can't both win.
+	SetPollWinnerIfUnset(ctx context.Context, id, nominationID string) (bool, error)
 	CodeExists(ctx context.Context, code string) (bool, error)
 
 	// ListPolls returns every poll, newest first, for the admin history view.

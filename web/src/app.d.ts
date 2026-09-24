@@ -5,7 +5,12 @@ declare global {
 		// interface Error {}
 		// interface Locals {}
 		// interface PageData {}
-		// interface PageState {}
+		// Shallow-routing state: open sheets get their own history entry so the
+		// browser back button / swipe-back closes them instead of leaving the page.
+		interface PageState {
+			options?: boolean; // home: More options sheet
+			browse?: boolean; // poll: Add titles sheet
+		}
 		// interface Platform {}
 	}
 }

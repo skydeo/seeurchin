@@ -10,11 +10,11 @@
 
 {#if r}
 	<div class="panel p-4">
-		<h3 class="font-title text-xs font-bold uppercase tracking-[0.12em] text-faint">Live tally</h3>
+		<h3 class="section-h">Live tally</h3>
 		<div class="mt-3 space-y-2.5">
 			{#each r.ranked as e (e.nomination_id)}
 				<div>
-					<div class="flex items-baseline justify-between gap-2 text-xs font-bold">
+					<div class="flex items-baseline justify-between gap-2 text-sm font-bold">
 						<span class="truncate {winners.has(e.nomination_id) ? 'text-accent-ink' : 'text-muted'}">{e.title}</span>
 						<span class="tabular-nums text-faint">{e.score}</span>
 					</div>
