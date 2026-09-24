@@ -12,6 +12,19 @@ through a two-round poll — nominate titles straight from your own library, the
 vote. Mobile-first, no accounts required, runs as a single small container
 alongside your existing Jellyfin stack.
 
+<p>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/skydeo/seeurchin?color=0e5a7d" /></a>
+  <a href="https://github.com/skydeo/seeurchin/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/skydeo/seeurchin?color=1d7aa3&label=release" /></a>
+  <a href="go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/skydeo/seeurchin?logo=go&logoColor=white" /></a>
+  <a href="https://github.com/skydeo/seeurchin/commits"><img alt="Last commit" src="https://img.shields.io/github/last-commit/skydeo/seeurchin?color=14b8a6" /></a>
+</p>
+<p>
+  <a href="Dockerfile"><img alt="Docker ready" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" /></a>
+  <img alt="Jellyfin companion" src="https://img.shields.io/badge/Jellyfin-companion-00A4DC?logo=jellyfin&logoColor=white" />
+  <img alt="Built with Svelte 5" src="https://img.shields.io/badge/Svelte%205-FF3E00?logo=svelte&logoColor=white" />
+  <img alt="Tailwind v4" src="https://img.shields.io/badge/Tailwind%20v4-06B6D4?logo=tailwindcss&logoColor=white" />
+</p>
+
 </div>
 
 <table align="center">
@@ -428,4 +441,8 @@ system / light / dark theming.
 
 **v1.0.0** — the two-round flow, the core voting methods, guest identity, live
 updates, library browsing, and Docker packaging are complete and in use.
+
+## License
+
+[MIT](LICENSE) © Alex
 </content>
