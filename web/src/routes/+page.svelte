@@ -295,7 +295,7 @@
 {/snippet}
 
 {#snippet toggle(on: boolean, label: string, sub: string, onclick: () => void)}
-	<button type="button" role="switch" aria-checked={on} {onclick} class="group-row">
+	<button type="button" role="switch" aria-checked={on} {onclick} class="settings-row">
 		<span><span class="lbl">{label}</span>{#if sub}<span class="sub">{sub}</span>{/if}</span>
 		<span class="switch"></span>
 	</button>
@@ -486,9 +486,9 @@
 		<div class="sheet-body space-y-6 px-4 pt-1 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
 			<!-- Nominating -->
 			<section>
-				<h3 class="group-title">Nominating</h3>
-				<div class="group">
-					<div class="group-row">
+				<h3 class="settings-title">Nominating</h3>
+				<div class="settings">
+					<div class="settings-row">
 						<span><span class="lbl">Titles per person</span><span class="sub">How many each person can add</span></span>
 						<div class="stepper">
 							<button type="button" aria-label="Fewer" disabled={nomLimit === 0} onclick={() => (nomLimit = Math.max(0, nomLimit - 1))}>−</button>
@@ -501,7 +501,7 @@
 					{/if}
 					{#if allGenres.length > 0}
 						<div>
-							<button type="button" class="group-row" aria-expanded={showGenres} onclick={() => (showGenres = !showGenres)}>
+							<button type="button" class="settings-row" aria-expanded={showGenres} onclick={() => (showGenres = !showGenres)}>
 								<span class="lbl">Genres</span>
 								<span class="flex items-center gap-1.5 text-[15px] font-bold text-muted">
 									{selectedGenres.length === 0 ? 'Any genre' : `${selectedGenres.length} selected`}
@@ -517,7 +517,7 @@
 							{/if}
 						</div>
 					{:else if genreError}
-						<div class="group-row"><span class="sub">Genres unavailable ({genreError})</span></div>
+						<div class="settings-row"><span class="sub">Genres unavailable ({genreError})</span></div>
 					{/if}
 					{#if seerrEnabled}
 						{@render toggle(allowWriteins, 'Titles not in the library', 'Requested through Seerr', () => (allowWriteins = !allowWriteins))}
@@ -530,13 +530,13 @@
 
 			<!-- Voting -->
 			<section>
-				<h3 class="group-title">Voting · {methodName}</h3>
+				<h3 class="settings-title">Voting · {methodName}</h3>
 				{#if isRandom}
 					<p class="panel px-4 py-3.5 text-[15px] font-semibold text-muted">A random nomination is drawn as the winner, so there’s nothing to configure.</p>
 				{:else}
-					<div class="group">
+					<div class="settings">
 						{#if method === 'approval'}
-							<div class="group-row">
+							<div class="settings-row">
 								<span class="lbl">Picks per person</span>
 								<div class="stepper">
 									<button type="button" aria-label="Fewer" disabled={num(config.votes_per_user) <= 1} onclick={() => (config.votes_per_user = Math.max(1, num(config.votes_per_user) - 1))}>−</button>
@@ -546,7 +546,7 @@
 							</div>
 							{@render toggle(stackOn, 'Stack votes on one title', 'Spend several picks on a favorite', toggleStack)}
 						{:else if method === 'ranked'}
-							<div class="group-row">
+							<div class="settings-row">
 								<span><span class="lbl">How many to rank</span><span class="sub">“All” ranks every title</span></span>
 								<div class="stepper">
 									<button type="button" aria-label="Fewer" disabled={num(config.max_ranked) <= 0} onclick={() => (config.max_ranked = Math.max(0, num(config.max_ranked) - 1))}>−</button>
@@ -555,7 +555,7 @@
 								</div>
 							</div>
 						{:else if method === 'score'}
-							<div class="group-row">
+							<div class="settings-row">
 								<span class="lbl">Top rating</span>
 								<div class="stepper">
 									<button type="button" aria-label="Fewer" disabled={num(config.max_score) <= 2} onclick={() => (config.max_score = Math.max(2, num(config.max_score) - 1))}>−</button>
@@ -563,7 +563,7 @@
 									<button type="button" aria-label="More" disabled={num(config.max_score) >= 10} onclick={() => (config.max_score = num(config.max_score) + 1)}>+</button>
 								</div>
 							</div>
-							<div class="group-row">
+							<div class="settings-row">
 								<span class="lbl">Winner by</span>
 								<div class="seg w-44" role="group" aria-label="Winner by">
 									<button type="button" aria-pressed={(config.aggregate ?? 'total') === 'total'} onclick={() => (config.aggregate = 'total')}>Total</button>
@@ -579,7 +579,7 @@
 
 			<!-- Timer -->
 			<section>
-				<h3 class="group-title">Timer</h3>
+				<h3 class="settings-title">Timer</h3>
 				<div class="space-y-3 rounded-2xl border border-line bg-surface p-3">
 					<div class="seg" role="group" aria-label="Timer">
 						{#each [['none', 'None'], ['quick', 'In the room'], ['scheduled', 'By a date']] as [val, label] (val)}
@@ -635,16 +635,16 @@
 
 			<!-- Access -->
 			<section>
-				<h3 class="group-title">Who can join</h3>
-				<div class="group">
+				<h3 class="settings-title">Who can join</h3>
+				<div class="settings">
 					{@render toggle(allowGuests, 'Guests with the link', 'No account needed', () => (allowGuests = !allowGuests))}
 					{#if allowGuests}
-						<div class="group-row">
+						<div class="settings-row">
 							<label for="passcode" class="lbl">Passcode</label>
 							<input id="passcode" bind:value={passcode} autocomplete="off" maxlength="40" placeholder="Optional" class="input h-10 w-40 px-3 py-0 text-right" />
 						</div>
 					{/if}
-					<div class="group-row flex-wrap">
+					<div class="settings-row flex-wrap">
 						<span class="lbl">Show who nominated</span>
 						<div class="seg w-full" role="group" aria-label="Show who nominated">
 							{#each [['none', 'Nobody'], ['winner', 'Winner only'], ['all', 'Every title']] as [val, label] (val)}

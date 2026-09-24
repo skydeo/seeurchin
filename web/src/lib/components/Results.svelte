@@ -26,6 +26,8 @@
 	}
 	const nomById = $derived(new Map(poll.nominations.map((n) => [n.id, n])));
 	const max = $derived(Math.max(1, ...(r?.ranked.map((x) => x.score) ?? [1])));
+	// Winner entries don't always carry a score; the ranked list does.
+	const scoreById = $derived(new Map((r?.ranked ?? []).map((e) => [e.nomination_id, e.score])));
 	const winnerIds = $derived(new Set(r?.winners.map((w) => w.nomination_id) ?? []));
 	const isTie = $derived((r?.winners.length ?? 0) > 1);
 	const hasWinner = $derived((r?.winners.length ?? 0) > 0);
@@ -70,7 +72,7 @@
 							<h2 class="font-display text-[28px] leading-tight font-bold text-ink">{w.title}</h2>
 						{/if}
 						<p class="mt-1 text-[15px] font-semibold text-muted">
-							{[n?.year || '', !isRandom ? fmt(w.score) : ''].filter(Boolean).join(' · ')}
+							{[n?.year || '', !isRandom ? fmt(scoreById.get(w.nomination_id) ?? w.score) : ''].filter(Boolean).join(' · ')}
 						</p>
 						{#if w.nominators && w.nominators.length > 0}
 							<p class="mt-0.5 text-sm font-semibold text-faint">Nominated by {w.nominators.join(', ')}</p>

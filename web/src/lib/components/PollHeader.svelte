@@ -102,7 +102,7 @@
 	<div class="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
 		<span class="pill {statusClass[poll.status]}">{statusLabel[poll.status]}</span>
 		<span class="text-sm font-bold text-muted">
-			{poll.participant_count} {poll.participant_count === 1 ? 'person' : 'people'}{#if poll.status !== 'round1'} · {poll.voter_count} voted{/if}
+			{poll.participant_count} {poll.participant_count === 1 ? 'person' : 'people'}{poll.status !== 'round1' ? ` · ${poll.voter_count} voted` : ''}
 			·
 			<button type="button" onclick={copyLink} class="rounded px-0.5 font-extrabold tracking-[0.12em] text-ink underline decoration-line2 decoration-2 underline-offset-4 hover:decoration-accent" title="Copy share link" aria-label="Poll code {poll.code}, copy share link">{poll.code}</button>
 		</span>
