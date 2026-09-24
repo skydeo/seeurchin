@@ -823,11 +823,55 @@ func (s *Service) Results(ctx context.Context, p *Poll) (voting.Results, []Nomin
 		return voting.Results{}, nil, err
 	}
 	// A frozen winner (random pick, or any decided-once method) is authoritative
-	// over the tally.
+	// over the tally. When it was drawn from a tallied tie (BreakTie), keep the
+	// co-winners so the UI can say the tie was broken at random.
 	if p.WinnerNominationID != "" {
+		if _, decides := voting.Decider(p.VotingMethod); !decides && len(res.WinnerIDs) > 1 {
+			for _, id := range res.WinnerIDs {
+				if id == p.WinnerNominationID {
+					res.TiedIDs = res.WinnerIDs
+					break
+				}
+			}
+		}
 		res.WinnerIDs = []string{p.WinnerNominationID}
 	}
 	return res, noms, nil
+}
+
+// BreakTie draws one of a closed poll's tied winners at random and freezes it
+// as the winner, so every participant sees the same pick. Host only; a poll
+// without a tie (or whose winner is already frozen) is a conflict.
+func (s *Service) BreakTie(ctx context.Context, p *Poll, participant *Participant) (*Poll, error) {
+	if !participant.IsHost() {
+		return nil, errForbid("only the host can break a tie")
+	}
+	if p.Status != StatusClosed {
+		return nil, errConflict("the poll hasn't closed yet")
+	}
+	if p.WinnerNominationID != "" {
+		return nil, errConflict("the winner has already been decided")
+	}
+	res, _, err := s.Results(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	if len(res.WinnerIDs) < 2 {
+		return nil, errConflict("there's no tie to break")
+	}
+	winner, err := voting.Random{}.Decide(nil, res.WinnerIDs)
+	if err != nil {
+		return nil, err
+	}
+	ok, err := s.repo.SetPollWinnerIfUnset(ctx, p.ID, winner)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return s.repo.GetPollByID(ctx, p.ID) // someone else broke it first
+	}
+	p.WinnerNominationID = winner
+	return p, nil
 }
 
 func scopeAllows(scope LibraryScope, itemType string) bool {

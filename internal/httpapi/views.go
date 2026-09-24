@@ -83,6 +83,8 @@ type resultsView struct {
 	Winners []resultEntry        `json:"winners"`
 	Ranked  []resultEntry        `json:"ranked"`
 	Rounds  []voting.RoundResult `json:"rounds,omitempty"`
+	// TiedIDs: the co-winners a random tie-break chose between (nomination IDs).
+	TiedIDs []string `json:"tied_ids,omitempty"`
 }
 
 type resultEntry struct {
@@ -303,10 +305,13 @@ func (s *Server) computeResults(ctx context.Context, p *poll.Poll, noms []poll.N
 	rv := &resultsView{
 		Method:  res.Method,
 		Rounds:  res.Rounds,
+		TiedIDs: res.TiedIDs,
 		Winners: []resultEntry{},
 		Ranked:  []resultEntry{},
 	}
+	score := make(map[string]float64, len(res.Ranked))
 	for _, r := range res.Ranked {
+		score[r.NominationID] = r.Score
 		e := resultEntry{NominationID: r.NominationID, Title: title[r.NominationID], Score: r.Score}
 		if nominators != nil && (p.RevealScope == poll.RevealAll || winnerSet[r.NominationID]) {
 			e.Nominators = nominators[r.NominationID]
@@ -314,7 +319,7 @@ func (s *Server) computeResults(ctx context.Context, p *poll.Poll, noms []poll.N
 		rv.Ranked = append(rv.Ranked, e)
 	}
 	for _, id := range res.WinnerIDs {
-		e := resultEntry{NominationID: id, Title: title[id]}
+		e := resultEntry{NominationID: id, Title: title[id], Score: score[id]}
 		if nominators != nil {
 			e.Nominators = nominators[id]
 		}

@@ -462,6 +462,27 @@ func (s *Server) handleAdvance(w http.ResponseWriter, r *http.Request) {
 	s.respondView(w, r, p, me)
 }
 
+// handleBreakTie lets the host resolve a tied result by drawing one of the
+// co-winners at random; everyone gets the frozen pick via SSE.
+func (s *Server) handleBreakTie(w http.ResponseWriter, r *http.Request) {
+	p, err := s.pollFromCode(r)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	me, ok := s.requireParticipant(w, r, p)
+	if !ok {
+		return
+	}
+	p, err = s.svc.BreakTie(r.Context(), p, me)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	s.broadcast(p.ID, "results")
+	s.respondView(w, r, p, me)
+}
+
 // handleRequestWinner lets the host request a winning write-in manually (for
 // polls with auto-request turned off).
 func (s *Server) handleRequestWinner(w http.ResponseWriter, r *http.Request) {

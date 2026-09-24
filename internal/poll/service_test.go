@@ -308,3 +308,80 @@ func TestEndNowOnTimedPollCrownsLoneNominee(t *testing.T) {
 		t.Fatalf("end-now should crown the lone nominee: %+v", got)
 	}
 }
+
+// tiedClosedPoll builds a closed approval poll where host and guest each
+// approve a different title, so the tally is a two-way tie.
+func tiedClosedPoll(t *testing.T) (*poll.Service, *poll.Poll, *poll.Participant, *poll.Participant) {
+	t.Helper()
+	svc, st := newSvc(t)
+	ctx := context.Background()
+	p, host, err := svc.CreatePoll(ctx, baseInput())
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	guest, err := svc.JoinAsGuest(ctx, p, "Bob")
+	if err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	nominate(t, svc, p, host, "a", "b")
+	if p, err = svc.Advance(ctx, p, host); err != nil {
+		t.Fatalf("advance to round 2: %v", err)
+	}
+	noms, _ := st.ListNominations(ctx, p.ID)
+	if err := svc.CastVotes(ctx, p, host, map[string]int{noms[0].ID: 1}); err != nil {
+		t.Fatalf("host vote: %v", err)
+	}
+	if err := svc.CastVotes(ctx, p, guest, map[string]int{noms[1].ID: 1}); err != nil {
+		t.Fatalf("guest vote: %v", err)
+	}
+	if p, err = svc.Advance(ctx, p, host); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	return svc, p, host, guest
+}
+
+func TestBreakTieFreezesOneOfTheTiedWinners(t *testing.T) {
+	svc, p, host, guest := tiedClosedPoll(t)
+	ctx := context.Background()
+
+	before, _, err := svc.Results(ctx, p)
+	if err != nil || len(before.WinnerIDs) != 2 {
+		t.Fatalf("want a 2-way tie before breaking, got %v (err %v)", before.WinnerIDs, err)
+	}
+	if _, err := svc.BreakTie(ctx, p, guest); err == nil {
+		t.Fatal("a non-host must not be able to break the tie")
+	}
+	p, err = svc.BreakTie(ctx, p, host)
+	if err != nil {
+		t.Fatalf("break tie: %v", err)
+	}
+	after, _, err := svc.Results(ctx, p)
+	if err != nil {
+		t.Fatalf("results: %v", err)
+	}
+	if len(after.WinnerIDs) != 1 || after.WinnerIDs[0] != p.WinnerNominationID {
+		t.Fatalf("want the single frozen winner, got %v", after.WinnerIDs)
+	}
+	if len(after.TiedIDs) != 2 {
+		t.Fatalf("want the 2 co-winners kept in TiedIDs, got %v", after.TiedIDs)
+	}
+	if _, err := svc.BreakTie(ctx, p, host); err == nil {
+		t.Fatal("breaking an already-broken tie should conflict")
+	}
+}
+
+func TestBreakTieWithoutTieConflicts(t *testing.T) {
+	svc, st := newSvc(t)
+	ctx := context.Background()
+	p, host, _ := svc.CreatePoll(ctx, baseInput())
+	nominate(t, svc, p, host, "a", "b")
+	p, _ = svc.Advance(ctx, p, host)
+	noms, _ := st.ListNominations(ctx, p.ID)
+	if err := svc.CastVotes(ctx, p, host, map[string]int{noms[0].ID: 1}); err != nil {
+		t.Fatalf("vote: %v", err)
+	}
+	p, _ = svc.Advance(ctx, p, host)
+	if _, err := svc.BreakTie(ctx, p, host); err == nil {
+		t.Fatal("a clear winner has no tie to break")
+	}
+}

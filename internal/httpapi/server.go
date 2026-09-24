@@ -73,6 +73,7 @@ func (s *Server) Routes() http.Handler {
 			r.Post("/nominations", s.handleNominate)
 			r.Delete("/nominations/{id}", s.handleWithdraw)
 			r.Post("/advance", s.handleAdvance)
+			r.Post("/tiebreak", s.handleBreakTie)
 			r.Post("/timer/start", s.handleTimerStart)
 			r.Post("/timer/pause", s.handleTimerPause)
 			r.Post("/timer/extend", s.handleTimerExtend)
