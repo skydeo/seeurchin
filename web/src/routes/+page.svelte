@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, pushState } from '$app/navigation';
+	import { page } from '$app/state';
 	import { api } from '$lib/api';
 	import { lockScroll } from '$lib/scrollLock';
 	import type { VotingMethod, CreatePollBody, UserSession } from '$lib/types';
@@ -54,7 +55,13 @@
 	let quickR2 = $state(120);
 	let schedR1 = $state(''); // datetime-local strings
 	let schedR2 = $state('');
-	let optionsOpen = $state(false);
+	// The sheet is a shallow-routing entry: opening pushes history state, so
+	// browser back / swipe-back closes it instead of leaving the page.
+	const optionsOpen = $derived(!!page.state.options);
+	const openOptions = () => pushState('', { options: true });
+	const closeOptions = () => {
+		if (page.state.options) history.back();
+	};
 	let creating = $state(false);
 	let error = $state('');
 
@@ -274,7 +281,7 @@
 </script>
 
 <svelte:head><title>seeurchin — group movie night picker</title></svelte:head>
-<svelte:window onkeydown={(e) => optionsOpen && e.key === 'Escape' && (optionsOpen = false)} />
+<svelte:window onkeydown={(e) => optionsOpen && e.key === 'Escape' && closeOptions()} />
 
 {#snippet check()}
 	<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10" /></svg>
@@ -440,7 +447,7 @@
 				<!-- More options -->
 				<button
 					type="button"
-					onclick={() => (optionsOpen = true)}
+					onclick={openOptions}
 					aria-haspopup="dialog"
 					class="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-3 rounded-[12px] border-t border-line px-1 pt-4 text-left"
 				>
@@ -475,12 +482,12 @@
 </main>
 
 {#if optionsOpen}
-	<div class="overlay" onclick={() => (optionsOpen = false)} aria-hidden="true"></div>
+	<div class="overlay" onclick={closeOptions} aria-hidden="true"></div>
 	<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="opts-title">
 		<div class="flex justify-center pt-2" aria-hidden="true"><span class="h-[5px] w-10 rounded-full bg-line2"></span></div>
 		<div class="flex items-center justify-between py-1.5 pr-2 pl-5">
 			<h2 id="opts-title" class="font-display text-2xl font-bold text-ink">More options</h2>
-			<button type="button" onclick={() => (optionsOpen = false)} class="h-11 px-3 text-base font-extrabold text-accent-ink">Done</button>
+			<button type="button" onclick={closeOptions} class="h-11 px-3 text-base font-extrabold text-accent-ink">Done</button>
 		</div>
 
 		<div class="sheet-body space-y-6 px-4 pt-1 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">

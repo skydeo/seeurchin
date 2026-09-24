@@ -3,6 +3,8 @@
 	import type { PollView, LibraryItem, ExternalResult } from '$lib/types';
 	import PosterImage from './PosterImage.svelte';
 	import { lockScroll } from '$lib/scrollLock';
+	import { pushState } from '$app/navigation';
+	import { page } from '$app/state';
 
 	let {
 		poll,
@@ -45,7 +47,12 @@
 	}
 
 	// --- browse modal ---
-	let browseOpen = $state(false);
+	// Shallow-routing entry, like the home options sheet: back / swipe-back
+	// closes the browser instead of leaving the poll.
+	const browseOpen = $derived(!!page.state.browse);
+	const closeBrowse = () => {
+		if (page.state.browse) history.back();
+	};
 	let browseTab = $state<'library' | 'external'>('library');
 	let query = $state('');
 	let typeFilter = $state(''); // '', 'movie', 'series'
@@ -143,12 +150,12 @@
 	function openBrowse() {
 		browseTab = 'library';
 		genre = '';
-		browseOpen = true;
+		pushState('', { browse: true });
 		loadGenres();
 	}
 </script>
 
-<svelte:window onkeydown={(e) => browseOpen && e.key === 'Escape' && (browseOpen = false)} />
+<svelte:window onkeydown={(e) => browseOpen && e.key === 'Escape' && closeBrowse()} />
 
 {#snippet checkBadge()}
 	<span class="absolute top-1.5 right-1.5 z-[3] grid h-7 w-7 place-items-center rounded-full bg-accent text-on-accent shadow-md">
@@ -246,7 +253,7 @@
 			<div class="px-4 pt-2">
 				<div class="-mr-2 flex items-center justify-between">
 					<h2 id="browse-title" class="font-display text-2xl font-bold text-ink">Add titles</h2>
-					<button onclick={() => (browseOpen = false)} aria-label="Close" class="grid h-11 w-11 place-items-center rounded-full text-muted hover:text-ink">
+					<button onclick={closeBrowse} aria-label="Close" class="grid h-11 w-11 place-items-center rounded-full text-muted hover:text-ink">
 						<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
 					</button>
 				</div>
@@ -350,7 +357,7 @@
 
 			<div class="border-t border-line px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
 				{#if actionError}<p class="mb-2 text-sm font-bold text-coral-ink" role="alert">{actionError}</p>{/if}
-				<button onclick={() => (browseOpen = false)} class="btn btn-primary h-[52px] w-full text-[17px]">
+				<button onclick={closeBrowse} class="btn btn-primary h-[52px] w-full text-[17px]">
 					{#if mine.length > 0}Done · {mine.length} added{:else}Done{/if}
 				</button>
 			</div>
